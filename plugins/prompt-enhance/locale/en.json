@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Prompt Enhance",
+    "description": "Adds an orange Enhance button beside the composer's send action that rewrites the draft into a clearer prompt with the default model."
+  }
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: deliverable-link-route
+      name: '@local/dsh-plugin-deliverable-link-route'

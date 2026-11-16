@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="余额 / Token 用量">
+  <rect x="0" y="0" width="64" height="64" rx="15" fill="#1B2A41"/>
+  <path d="M14 23.5c0-2.2 1.8-4 4-4h24c2.2 0 4 1.8 4 4v2.5H18a4 4 0 0 0-4 4v-6.5Z" fill="#4C7BD9"/>
+  <rect x="14" y="25" width="36" height="19" rx="5" fill="#6EA8FF"/>
+  <rect x="14" y="29" width="36" height="4" fill="#2E4A7D" opacity=".55"/>
+  <circle cx="42" cy="38" r="4.5" fill="#1B2A41"/>
+  <circle cx="42" cy="38" r="1.8" fill="#FFD166"/>
+  <path d="M20 40.5h10" stroke="#1B2A41" stroke-width="2.4" stroke-linecap="round" opacity=".65"/>
+  <circle cx="46" cy="20" r="8" fill="#FFD166"/>
+  <path d="M43 20.5h6M46 17v6.5" stroke="#1B2A41" stroke-width="2" stroke-linecap="round"/>
+</svg>

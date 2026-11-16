@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Deliverable Hover Menu",
+    "description": "Adds a hover menu to conversation file links and delivered-file cards: open with the default program, show the containing folder, copy the file, or copy its full path."
+  }
+}

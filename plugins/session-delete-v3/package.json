@@ -1,0 +1,32 @@
+{
+  "name": "@local/dsh-plugin-session-delete-v3",
+  "version": "3.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Session delete queue: mark sessions for deletion, show them struck through in red, and cancel before the next app start.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: preview-popout
+      name: '@local/dsh-plugin-preview-popout'

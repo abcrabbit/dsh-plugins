@@ -1,0 +1,3 @@
+- insert:
+    - id: screenshot-insert
+      name: '@local/dsh-plugin-screenshot-insert'

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Delete Queue",
+    "description": "Delete sessions through a visible, cancellable queue: marked sessions are struck through in red and removed on the next start."
+  }
+}

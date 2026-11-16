@@ -1,0 +1,32 @@
+{
+  "name": "@local/dsh-plugin-deliverable-menu",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Adds a hover menu to conversation file links and delivered-file cards in Web chat: open with the system default program, open the containing folder, copy the file, or copy its full path.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-deliverables"
+      ]
+    }
+  }
+}

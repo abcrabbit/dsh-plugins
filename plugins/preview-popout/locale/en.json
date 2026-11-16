@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Preview pop-out window",
+    "description": "Detaches a right-side document preview tab into its own window by dragging the tab chip out of the panel, or from the tab menu."
+  }
+}

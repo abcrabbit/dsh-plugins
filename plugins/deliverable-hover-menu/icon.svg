@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Deliverable Hover Menu">
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#1F2430"/>
+  <path d="M20 15h18l8 8v26a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V19a4 4 0 0 1 4-4z" fill="none" stroke="#9FB3FF" stroke-width="3.6" stroke-linejoin="round"/>
+  <path d="M38 15v8h8" fill="none" stroke="#9FB3FF" stroke-width="3.6" stroke-linejoin="round"/>
+  <rect x="39" y="30" width="15" height="20" rx="4" fill="#1F2430" stroke="#FFFFFF" stroke-width="2.8"/>
+  <circle cx="44.6" cy="36.4" r="1.5" fill="#FFFFFF"/>
+  <circle cx="48.4" cy="36.4" r="1.5" fill="#FFFFFF"/>
+  <circle cx="44.6" cy="40" r="1.5" fill="#FFFFFF"/>
+  <circle cx="48.4" cy="40" r="1.5" fill="#FFFFFF"/>
+  <path d="M20 44h11" stroke="#9FB3FF" stroke-width="3.2" stroke-linecap="round"/>
+</svg>
