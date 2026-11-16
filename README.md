@@ -4,10 +4,12 @@
 
 ## 下载
 
-| 方式 | 地址 |
-|---|---|
-| 下载整包（推荐） | 本页右侧 **克隆/下载 → 下载 ZIP** |
-| 只要某个插件 | 进 `plugins/` 找对应文件夹 |
+| 平台 | 发行版（推荐，直接下 zip） | 源码 |
+|---|---|---|
+| **GitHub** | [DSH-plugins-v1.0.0.zip](https://github.com/abcrabbit/dsh-plugins/releases/download/v1.0.0/DSH-plugins-v1.0.0.zip) | [仓库](https://github.com/abcrabbit/dsh-plugins) |
+| **Gitee** | [DSH插件包-v1.0.0.zip](https://gitee.com/bcrabbit/dsh-plugins/releases/download/v1.0.0/DSH%E6%8F%92%E4%BB%B6%E5%8C%85-v1.0.0.zip) | [仓库](https://gitee.com/bcrabbit/dsh-plugins) |
+
+也可以用页面上的 **Code → Download ZIP** 拿源码包，效果一样。
 
 解压后应该看到 `plugins`、`setup`、`安装说明.md`。
 
