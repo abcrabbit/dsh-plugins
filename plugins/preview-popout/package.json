@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-plugin-preview-popout",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Detaches a right-side document preview tab into its own window: drag a tab chip out of the preview panel (or use its context menu) and the file reopens in a standalone browser window.",

@@ -83,8 +83,12 @@ function createWindow() {
     window.show()
     window.focus()
   }
-  const timeout = setTimeout(reveal, REVEAL_TIMEOUT_MS)
-  timeout.unref?.()
+  // A cold window needs a fallback so a failed restore cannot leave it invisible
+  // forever. A parked warm window must never reveal itself: it has no payload
+  // yet, and the Host closes it on its own idle timeout. Its only reveal paths
+  // are the claim's ready marker (and the failure marker).
+  const timeout = warmWindowMode ? undefined : setTimeout(reveal, REVEAL_TIMEOUT_MS)
+  timeout?.unref?.()
   // Show it (fully transparent, ignoring the mouse) right away: a shown window
   // is painted normally, whereas a hidden one can keep presenting a stale first
   // frame. A parked warm window waits here until a detach claims it.
