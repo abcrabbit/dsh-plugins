@@ -17,8 +17,38 @@
  * The links' and cards' own left-click preview is untouched: this plugin adds
  * no overlay above them and never calls preventDefault on their gesture.
  */
+/**
+ * Resolve the installed package name that keys this browser module's graph id.
+ *
+ * The same client half can be installed from the workspace bundle
+ * (`@local/dsh-plugin-deliverable-menu`) or from a carried copy that drops the
+ * scope (`dsh-plugin-deliverable-menu`). The page keys client modules by the
+ * installed package name, so read the live boot graph instead of hardcoding it.
+ * @returns the module id for `window.__ModuleLoader__.load`.
+ */
+function resolvePackageId() {
+  const candidates = ['@local/dsh-plugin-deliverable-menu', 'dsh-plugin-deliverable-menu']
+  try {
+    const boot = window.__DSH_BOOT__
+    const entries = boot !== null && typeof boot === 'object' ? boot.entries : null
+    const ids = Array.isArray(entries)
+      ? entries.map((entry) => entry !== null && typeof entry === 'object' && typeof entry.id === 'string' ? entry.id : null)
+      : entries !== null && typeof entries === 'object'
+        ? Object.keys(entries)
+        : []
+    for (const candidate of candidates) if (ids.indexOf(candidate) !== -1) return candidate
+    const suffix = ids.find((id) => typeof id === 'string' && id.endsWith('/dsh-plugin-deliverable-menu'))
+    if (suffix !== undefined) return suffix
+  } catch (error) {
+    void error
+  }
+  return candidates[1]
+}
+
+const MODULE_ID = resolvePackageId()
+
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-deliverable-menu',
+  id: MODULE_ID,
   factory(require) {
     const React = require('react')
     const ReactDOM = require('react-dom')
@@ -27,7 +57,7 @@ window.__ModuleLoader__.load({
     /** Locale namespace owned by this plugin's visible copy. */
     const NS = 'deliverableMenu'
     /** This module's identity; also the style tag owner and the slot cell ids. */
-    const PACKAGE_ID = '@local/dsh-plugin-deliverable-menu'
+    const PACKAGE_ID = MODULE_ID
     /** Host route copying the addressed delivered file or its full path. */
     const COPY_ROUTE = 'dsh-deliverable-menu/copy'
     /** Host route acting on one conversation file link's resolved path. */

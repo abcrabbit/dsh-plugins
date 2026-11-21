@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-session-delete-v3",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
   "type": "module",
   "description": "Session delete queue: mark sessions for deletion, show them struck through in red, and cancel before the next app start.",

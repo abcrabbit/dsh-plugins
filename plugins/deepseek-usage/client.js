@@ -3,7 +3,27 @@
 // Hand-written browser module (no build step); `react` is the only importable
 // specifier. All copy goes through the 'deepseek-usage' locale namespace.
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-deepseek-usage',
+  // The same client half is installed either from the workspace bundle
+  // (`@local/...`) or from a carried copy (`dsh-plugin-...`); the Loader keys
+  // modules by the installed package name, so resolve the boot-graph id.
+  id: (() => {
+    const candidates = ['@local/dsh-plugin-deepseek-usage', 'dsh-plugin-deepseek-usage']
+    try {
+      const boot = window.__DSH_BOOT__
+      const entries = boot !== null && typeof boot === 'object' ? boot.entries : null
+      const ids = Array.isArray(entries)
+        ? entries.map((entry) => entry !== null && typeof entry === 'object' && typeof entry.id === 'string' ? entry.id : null)
+        : entries !== null && typeof entries === 'object'
+          ? Object.keys(entries)
+          : []
+      for (const candidate of candidates) if (ids.indexOf(candidate) !== -1) return candidate
+      const suffix = ids.find((id) => typeof id === 'string' && (id === 'dsh-plugin-deepseek-usage' || id.endsWith('/dsh-plugin-deepseek-usage')))
+      if (suffix !== undefined) return suffix
+    } catch (error) {
+      void error
+    }
+    return candidates[0]
+  })(),
   factory(require) {
     const React = require('react')
     const h = React.createElement

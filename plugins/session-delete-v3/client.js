@@ -1,11 +1,11 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-session-delete-v3',
+  id: 'dsh-plugin-session-delete-v3',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
     const NS = 'sessionDeleteQueue'
-    const PACKAGE_ID = '@local/dsh-plugin-session-delete-v3'
+    const PACKAGE_ID = 'dsh-plugin-session-delete-v3'
     const ENDPOINT = 'dsh-session-delete-v3'
     const PENDING_URL = ENDPOINT + '/pending'
     const DELETE_URL = ENDPOINT + '/delete'

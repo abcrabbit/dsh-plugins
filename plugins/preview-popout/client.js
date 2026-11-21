@@ -20,8 +20,38 @@
  * The tab itself stays in the sidebar, so the original preview keeps working
  * and the user can close it whenever they like.
  */
+/**
+ * Resolve the installed package name that keys this browser module's graph id.
+ *
+ * The same client half can be installed from the workspace bundle
+ * (`@local/dsh-plugin-preview-popout`) or from a carried copy that drops the
+ * scope (`dsh-plugin-preview-popout`). The page keys client modules by the
+ * installed package name, so read the live boot graph instead of hardcoding it.
+ * @returns the module id for `window.__ModuleLoader__.load`.
+ */
+function resolvePackageId() {
+  const candidates = ['@local/dsh-plugin-preview-popout', 'dsh-plugin-preview-popout']
+  try {
+    const boot = window.__DSH_BOOT__
+    const entries = boot !== null && typeof boot === 'object' ? boot.entries : null
+    const ids = Array.isArray(entries)
+      ? entries.map((entry) => entry !== null && typeof entry === 'object' && typeof entry.id === 'string' ? entry.id : null)
+      : entries !== null && typeof entries === 'object'
+        ? Object.keys(entries)
+        : []
+    for (const candidate of candidates) if (ids.indexOf(candidate) !== -1) return candidate
+    const suffix = ids.find((id) => typeof id === 'string' && id.endsWith('/dsh-plugin-preview-popout'))
+    if (suffix !== undefined) return suffix
+  } catch (error) {
+    void error
+  }
+  return candidates[1]
+}
+
+const MODULE_ID = resolvePackageId()
+
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-preview-popout',
+  id: MODULE_ID,
   factory(require) {
     const React = require('react')
     const h = React.createElement

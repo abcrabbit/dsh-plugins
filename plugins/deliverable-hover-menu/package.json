@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-deliverable-menu",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Adds a hover menu to conversation file links and delivered-file cards in Web chat: open with the system default program, open the containing folder, copy the file, or copy its full path.",

@@ -1,11 +1,11 @@
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-prompt-enhance',
+  id: 'dsh-plugin-prompt-enhance',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
     const NS = 'promptEnhance'
-    const PACKAGE_ID = '@local/dsh-plugin-prompt-enhance'
+    const PACKAGE_ID = 'dsh-plugin-prompt-enhance'
     const ENDPOINT_PATH = 'dsh-prompt-enhance/enhance'
     const STYLE_TAG_ID = PACKAGE_ID + '/prompt-enhance.css'
     /** Client-side ceiling; the Host route owns the authoritative timeout. */
