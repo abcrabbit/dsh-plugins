@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-plugin-deepseek-usage",
+  "name": "dsh-plugin-deepseek-usage",
   "version": "1.2.0",
   "private": true,
   "type": "module",

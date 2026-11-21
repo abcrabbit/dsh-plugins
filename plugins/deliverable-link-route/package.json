@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-plugin-deliverable-link-route",
+  "name": "dsh-plugin-deliverable-link-route",
   "version": "1.0.0",
   "private": true,
   "type": "module",

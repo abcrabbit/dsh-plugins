@@ -1,3 +1,3 @@
 - insert:
     - id: deliverable-hover-menu
-      name: '@local/dsh-plugin-deliverable-menu'
+      name: 'dsh-plugin-deliverable-menu'

@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-plugin-preview-popout",
+  "name": "dsh-plugin-preview-popout",
   "version": "1.0.1",
   "private": true,
   "type": "module",
