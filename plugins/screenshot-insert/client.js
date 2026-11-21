@@ -223,38 +223,49 @@ window.__ModuleLoader__.load({
       '.dshScreenshot_toastError{border-color:rgba(248,113,113,.6);color:#fee2e2}',
       '.dshScreenshot_toastIcon{flex:none;font-weight:600}',
       '.dshScreenshot_menu{position:fixed;z-index:1400;box-sizing:border-box;min-width:286px;max-width:380px;',
-      'padding:5px;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(148,163,184,.35);',
-      'border-radius:12px;background:rgba(2,6,23,.96);box-shadow:0 16px 48px rgba(0,0,0,.5)}',
+      'padding:5px;display:flex;flex-direction:column;gap:2px;border:1px solid var(--dsw-alias-border-l2,#d1d5db);',
+      'border-radius:12px;background:var(--dsw-alias-bg-overlay,#ffffff);color:var(--dsw-alias-label-primary,#111827);',
+      'box-shadow:0 16px 40px rgba(0,0,0,.28)}',
       '.dshScreenshot_menuItem{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;',
-      'padding:8px 10px;border:none;border-radius:8px;background:transparent;color:#e2e8f0;cursor:pointer;',
+      'padding:8px 10px;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;',
       'text-align:left;font:13px/18px var(--dsw-font-family,system-ui)}',
-      '@media (hover:hover){.dshScreenshot_menuItem:hover:not(:disabled){background:rgba(148,163,184,.18)}}',
+      '@media (hover:hover){.dshScreenshot_menuItem:hover:not(:disabled){',
+      'background:var(--dsw-alias-interactive-bg-hover,rgba(15,23,42,.06))}}',
       '.dshScreenshot_menuItem:disabled{opacity:.5;cursor:default}',
-      '.dshScreenshot_menuTitle{pointer-events:none;font-weight:600;color:#f8fafc}',
-      '.dshScreenshot_menuHint{pointer-events:none;font-size:12px;line-height:16px;color:#94a3b8;white-space:normal}',
+      '.dshScreenshot_menuTitle{pointer-events:none;font-weight:600;color:var(--dsw-alias-label-primary,#111827)}',
+      '.dshScreenshot_menuHint{pointer-events:none;font-size:12px;line-height:16px;',
+      'color:var(--dsw-alias-label-secondary,#6b7280);white-space:normal}',
       '.dshScreenshot_pickerOverlay{position:fixed;inset:0;z-index:1400;box-sizing:border-box;display:flex;',
-      'align-items:center;justify-content:center;padding:24px;background:rgba(2,6,23,.58);outline:none}',
+      'align-items:center;justify-content:center;padding:24px;background:rgba(2,6,23,.4);outline:none}',
       '.dshScreenshot_picker{box-sizing:border-box;display:flex;flex-direction:column;width:min(560px,calc(100vw - 48px));',
-      'max-height:min(70vh,640px);border:1px solid rgba(148,163,184,.35);border-radius:14px;',
-      'background:rgba(15,23,42,.98);color:#f8fafc;box-shadow:0 24px 80px rgba(0,0,0,.55);overflow:hidden;',
-      'font:13px/18px var(--dsw-font-family,system-ui)}',
+      'max-height:min(70vh,640px);border:1px solid var(--dsw-alias-border-l2,#d1d5db);border-radius:14px;',
+      'background:var(--dsw-alias-bg-overlay,#ffffff);color:var(--dsw-alias-label-primary,#111827);',
+      'box-shadow:0 24px 80px rgba(0,0,0,.4);overflow:hidden;font:13px/18px var(--dsw-font-family,system-ui)}',
       '.dshScreenshot_pickerHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;',
-      'padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.25);font-weight:600}',
+      'padding:12px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);font-weight:600}',
       '.dshScreenshot_pickerBody{flex:1;min-height:0;overflow:auto;padding:6px}',
       '.dshScreenshot_pickerRow{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;',
       'padding:8px 10px;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;',
       'text-align:left;font:inherit}',
-      '@media (hover:hover){.dshScreenshot_pickerRow:hover{background:rgba(148,163,184,.18)}}',
-      '.dshScreenshot_pickerRow:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
+      '@media (hover:hover){.dshScreenshot_pickerRow:hover{',
+      'background:var(--dsw-alias-interactive-bg-hover,rgba(15,23,42,.06))}}',
+      '.dshScreenshot_pickerRow:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#2563eb);outline-offset:-2px}',
       '.dshScreenshot_pickerRowTitle{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
-      'pointer-events:none;font-weight:600}',
-      '.dshScreenshot_pickerRowMeta{pointer-events:none;font-size:12px;line-height:16px;color:#94a3b8}',
+      'pointer-events:none;font-weight:600;color:var(--dsw-alias-label-primary,#111827)}',
+      '.dshScreenshot_pickerRowMeta{pointer-events:none;font-size:12px;line-height:16px;',
+      'color:var(--dsw-alias-label-secondary,#6b7280)}',
       '.dshScreenshot_pickerHint{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 14px;',
-      'color:#94a3b8;text-align:center}',
+      'color:var(--dsw-alias-label-secondary,#6b7280);text-align:center}',
       '.dshScreenshot_pickerFooter{display:flex;justify-content:flex-end;padding:10px 14px;',
-      'border-top:1px solid rgba(148,163,184,.25)}',
+      'border-top:1px solid var(--dsw-alias-border-l1,#e5e7eb)}',
+      '.dshScreenshot_pickerAction{height:34px;padding:0 14px;border:1px solid var(--dsw-alias-border-l2,#d1d5db);',
+      'border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary,#111827);cursor:pointer;',
+      'font:13px/18px var(--dsw-font-family,system-ui)}',
+      '@media (hover:hover){.dshScreenshot_pickerAction:hover{',
+      'background:var(--dsw-alias-interactive-bg-hover,rgba(15,23,42,.06))}}',
       '.dshScreenshot_spinnerLight{width:18px;height:18px;border-radius:50%;box-sizing:border-box;',
-      'border:2px solid rgba(226,232,240,.3);border-top-color:#e2e8f0;',
+      'border:2px solid var(--dsw-alias-border-l2,#d1d5db);',
+      'border-top-color:var(--dsw-alias-brand-primary,#2563eb);',
       'animation:dshScreenshot_spin 800ms linear infinite}',
     ].join('')
 
@@ -1159,7 +1170,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dshScreenshot_pickerFooter' },
             h('button', {
               type: 'button',
-              className: 'dshScreenshot_ghostTool',
+              className: 'dshScreenshot_pickerAction',
               onClick: (event) => {
                 event.stopPropagation()
                 onCancel()
@@ -1193,7 +1204,14 @@ window.__ModuleLoader__.load({
       const noticeSeq = React.useRef(0)
       const buttonRef = React.useRef(null)
       const menuRef = React.useRef(null)
+      const pickerSeq = React.useRef(0)
       overlayRef.current = overlay
+
+      /** Close the window picker and invalidate any in-flight window-list read. */
+      const dismissPicker = () => {
+        pickerSeq.current += 1
+        setPicker(null)
+      }
 
       React.useEffect(() => () => {
         alive.current = false
@@ -1217,8 +1235,10 @@ window.__ModuleLoader__.load({
           if (event.key !== 'Escape') return
           event.preventDefault()
           event.stopPropagation()
-          if (picker !== null) setPicker(null)
-          else setMenu(null)
+          if (picker !== null) {
+            pickerSeq.current += 1
+            setPicker(null)
+          } else setMenu(null)
         }
         const onPointerDown = (event) => {
           if (menu === null) return
@@ -1293,7 +1313,7 @@ window.__ModuleLoader__.load({
       const beginCapture = (mode, windowId) => {
         if (busyRef.current || overlayRef.current !== null) return
         setMenu(null)
-        setPicker(null)
+        dismissPicker()
         setNotice(null)
         busyRef.current = true
         setBusy(true)
@@ -1322,13 +1342,15 @@ window.__ModuleLoader__.load({
       /** Open the window picker and load the capturable window list. */
       const openWindowPicker = () => {
         setMenu(null)
+        pickerSeq.current += 1
+        const seq = pickerSeq.current
         setPicker({ state: 'loading', windows: [] })
         listWindows().then((windows) => {
-          if (!alive.current) return
+          if (!alive.current || seq !== pickerSeq.current) return
           setPicker({ state: 'ready', windows })
         }, (error) => {
-          if (!alive.current) return
-          setPicker(null)
+          if (!alive.current || seq !== pickerSeq.current) return
+          dismissPicker()
           showNotice(t(noticeKeyFor(error)), true)
           console.warn('[screenshot-insert] window list failed:', error)
         })
@@ -1400,7 +1422,7 @@ window.__ModuleLoader__.load({
           state: picker.state,
           windows: picker.windows,
           onPick: onWindowPick,
-          onCancel: () => { setPicker(null) },
+          onCancel: () => { dismissPicker() },
         }), document.body),
         overlay === null ? null : ReactDOM.createPortal(h(CaptureOverlay, {
           image: overlay,
