@@ -6,8 +6,8 @@
 
 | 平台 | 发行版（推荐，直接下 zip） | 源码 |
 |---|---|---|
-| **GitHub** | [DSH-plugins-v1.2.0.zip](https://github.com/abcrabbit/dsh-plugins/releases/download/v1.2.0/DSH-plugins-v1.2.0.zip) | [仓库](https://github.com/abcrabbit/dsh-plugins) |
-| **Gitee** | [DSH插件包-v1.2.0.zip](https://gitee.com/bcrabbit/dsh-plugins/releases/download/v1.2.0/DSH%E6%8F%92%E4%BB%B6%E5%8C%85-v1.2.0.zip) | [仓库](https://gitee.com/bcrabbit/dsh-plugins) |
+| **GitHub** | [DSH-plugins-v1.3.0.zip](https://github.com/abcrabbit/dsh-plugins/releases/download/v1.3.0/DSH-plugins-v1.3.0.zip) | [仓库](https://github.com/abcrabbit/dsh-plugins) |
+| **Gitee** | [DSH插件包-v1.3.0.zip](https://gitee.com/bcrabbit/dsh-plugins/releases/download/v1.3.0/DSH%E6%8F%92%E4%BB%B6%E5%8C%85-v1.3.0.zip) | [仓库](https://gitee.com/bcrabbit/dsh-plugins) |
 
 也可以用页面上的 **Code → Download ZIP** 拿源码包，效果一样。
 
@@ -46,6 +46,8 @@
 - 普通人：重新下载 ZIP，覆盖 `plugins` 目录，重启 DSH
 - 用 Git 的：`git pull`
 ## 更新记录
+
+- **v1.3.0**（2026-11-21）screenshot-insert 1.3.0（跨屏截图 + 窗口选择）；deepseek-usage 1.2.1
 
 - **v1.2.0**（2026-11-21）包名去掉 `@local` 前缀，新增插件索引（可在「发现」页直接安装）
 
