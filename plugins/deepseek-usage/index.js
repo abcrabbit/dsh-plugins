@@ -20,18 +20,36 @@
  *    in memory, so any custom range (including ranges longer than 30 days) is
  *    served without touching the platform again.
  *
+ * Balances: the status route also reports the prepaid balance of the
+ * UncensoredLLM relay configured in this profile. The relay is OpenAI-compatible
+ * and exposes `GET /v1/dashboard/billing/subscription`; `hard_limit_usd` is its
+ * remaining prepaid balance. That key lives in the credentials service
+ * (`UNCENSOREDLLM_API_KEY`) and never reaches the Client. Both provider balances
+ * are refreshed about every two hours (and on a manual refresh).
+ *
+ * UncensoredLLM token usage: the relay exposes no key-level usage history, so
+ * this plugin folds the relay's provider usage out of the local Session logs
+ * (the same `assistant/message` usage records the chat UI reads) and serves it
+ * as `GET /deepseek-usage/v1/local-usage`. Session files are cached per file by
+ * size+mtime, so a rescan only decodes logs that changed.
+ *
  * Routes (all behind Connection's browser trust gate):
  *  - GET  /deepseek-usage/v1/status
  *  - GET  /deepseek-usage/v1/overview?from=YYYY-MM-DD&to=YYYY-MM-DD&key=&model=
+ *  - GET  /deepseek-usage/v1/local-usage?from=YYYY-MM-DD&to=YYYY-MM-DD&model=
  *  - POST /deepseek-usage/v1/refresh
  */
-import { inflateRawSync } from 'node:zlib'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { inflateRawSync, zstdDecompressSync } from 'node:zlib'
 
 /** Services required before the routes can be registered. */
-export const inject = ['webServer', 'connection', 'deepseekAccount']
+export const inject = ['webServer', 'connection', 'deepseekAccount', 'credentials']
 
 const ROUTE_STATUS = '/deepseek-usage/v1/status'
 const ROUTE_OVERVIEW = '/deepseek-usage/v1/overview'
+const ROUTE_LOCAL_USAGE = '/deepseek-usage/v1/local-usage'
 const ROUTE_REFRESH = '/deepseek-usage/v1/refresh'
 
 /** Cached data younger than this is served without a platform round trip. */
@@ -57,6 +75,19 @@ const USER_AGENT = 'DeepSeek-Harness/usage-panel'
 const CURRENCY_FALLBACK = 'CNY'
 /** Version string sent to the account service with client metadata. */
 const ACCOUNT_CLIENT_VERSION = '0.2.2-rc.1'
+/** UncensoredLLM relay configured in this profile (OpenAI-compatible). */
+const ULM_CREDENTIAL_REF = 'UNCENSOREDLLM_API_KEY'
+const ULM_SUBSCRIPTION_URL = 'https://api.uncensoredllm.ai/v1/dashboard/billing/subscription'
+const ULM_TIMEOUT_MS = 20_000
+/** Both provider balances are refreshed roughly every two hours. */
+const BALANCE_TTL_MS = 2 * 60 * 60 * 1000
+const BALANCE_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000
+/** UncensoredLLM prepaid balance (USD) that counts as "low" for the user. */
+const ULM_LOW_BALANCE_USD = 2
+/** Provider id the relay route registers in the LLM service. */
+const ULM_PROVIDER = 'uncensoredllm'
+/** Session logs rescanned at most this often while the panel stays open. */
+const SESSION_SCAN_TTL_MS = 10 * 60 * 1000
 /** Amount CSV types that count as token usage. */
 const TOKEN_TYPES = new Set(['output_tokens', 'input_tokens', 'input_cache_hit_tokens', 'input_cache_miss_tokens'])
 /** Stable error codes mirrored by the client's localized copy. */
@@ -102,6 +133,11 @@ export function apply(ctx) {
     },
     {
       kind: 'exact',
+      path: ROUTE_LOCAL_USAGE,
+      handler: (request, response) => handleJson(ctx, request, response, () => store.localOverview(request)),
+    },
+    {
+      kind: 'exact',
       path: ROUTE_REFRESH,
       handler: (request, response) => handleJson(ctx, request, response, () => store.refresh(request)),
     },
@@ -110,6 +146,17 @@ export function apply(ctx) {
     const disposers = routes.map((route) => ctx.webServer.register(route))
     return () => { for (const dispose of disposers) dispose() }
   }, 'deepseek-usage: routes')
+  // Keep both provider balances warm even while the panel is closed, so the
+  // sidebar entry shows a recent figure the moment the user looks at it.
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      store.refreshBalances().catch((error) => {
+        console.error('[deepseek-usage] scheduled balance refresh failed:', error && (error.message || error))
+      })
+    }, BALANCE_REFRESH_INTERVAL_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+    return () => clearInterval(timer)
+  }, 'deepseek-usage: balance refresh timer')
 }
 
 /** One JSON request/response wrapper shared by the three routes. */
@@ -157,25 +204,45 @@ function createUsageStore(ctx) {
   let accountCache = null
   /** Last account-grant failure, surfaced to the Client instead of an empty panel. */
   let lastError = null
+  /** @type {null | {at: number, value: {currency: string, available: number, low: boolean, hasPaymentMethod: boolean}|null, error: {code: string}|null}} */
+  let ulmCache = null
+  /** @type {null | Promise<object>} */
+  let ulmPending = null
+  /** Session-log based UncensoredLLM usage (independent of the DeepSeek bill). */
+  const localUsage = createLocalUsageStore()
 
   return {
     status,
     overview,
+    localOverview,
     refresh,
+    refreshBalances,
   }
 
-  /** GET /status: account identity, wallet, dataset bounds and sync state. */
+  /** GET /status: account identity, both provider balances, dataset bounds and sync state. */
   async function status(request) {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    // The sidebar entry only needs the balances; `light=1` skips the month sync
+    // so opening the app never waits for the whole usage history.
+    const light = url.searchParams.get('light') === '1'
+    const ulm = await readUlmBalance(false)
     const session = await readSession()
     if (session === null) {
-      return { ok: true, signedIn: false, account: null, balance: null, keys: [], models: [], firstDate: null, lastDate: null, lastSync: null, syncing: false, error: { code: 'signed_out' } }
+      return {
+        ok: true, signedIn: false, account: null, balance: null,
+        balances: { deepseek: null, ulm: ulmSummary(ulm) },
+        keys: [], models: [], firstDate: null, lastDate: null, lastSync: null, syncing: false,
+        error: { code: 'signed_out' },
+      }
     }
     let syncError = null
-    try {
-      await ensureData(request, false)
-    } catch (error) {
-      syncError = error
-      lastError = error
+    if (!light) {
+      try {
+        await ensureData(request, false)
+      } catch (error) {
+        syncError = error
+        lastError = error
+      }
     }
     const account = await readAccount(request)
     // A partial sync (some months failed but the dataset is usable) still has to
@@ -188,6 +255,12 @@ function createUsageStore(ctx) {
       signedIn: true,
       account: account.account,
       balance: account.balance,
+      balances: {
+        deepseek: account.balance === null
+          ? null
+          : Object.assign({}, account.balance, { updatedAt: accountCache === null ? null : accountCache.at }),
+        ulm: ulmSummary(ulm),
+      },
       keys: dataset === null ? [] : dataset.keys,
       models: dataset === null ? [] : dataset.models,
       firstDate: dataset === null ? null : dataset.firstDate,
@@ -234,7 +307,15 @@ function createUsageStore(ctx) {
     return null
   }
 
-  /** POST /refresh: re-read the platform dataset (current month + any gap). */
+  /** GET /local-usage: UncensoredLLM token usage folded from local Session logs. */
+  async function localOverview(request) {
+    const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    const query = parseQuery(url)
+    const data = await localUsage.read(query.refresh === true)
+    return Object.assign({ ok: true }, summarizeLocalUsage(data, query))
+  }
+
+  /** POST /refresh: re-read the platform dataset and both provider balances. */
   async function refresh(request) {
     if (request.method !== 'POST') throw new UsageError('invalid_query', 'refresh requires POST')
     const session = await readSession()
@@ -244,6 +325,10 @@ function createUsageStore(ctx) {
     } catch (error) {
       throw error instanceof UsageError ? error : new UsageError('internal', error instanceof Error ? error.message : String(error))
     }
+    // Force the next status read to re-query both wallet balances as well.
+    accountCache = null
+    localUsage.invalidate()
+    const ulm = await readUlmBalance(true)
     return {
       ok: true,
       lastSync: lastSync === null ? null : lastSync.at,
@@ -251,6 +336,7 @@ function createUsageStore(ctx) {
       models: dataset === null ? [] : dataset.models,
       firstDate: dataset === null ? null : dataset.firstDate,
       lastDate: dataset === null ? null : dataset.lastDate,
+      balances: { deepseek: null, ulm: ulmSummary(ulm) },
     }
   }
 
@@ -293,6 +379,75 @@ function createUsageStore(ctx) {
     }
     accountCache = { at: now, account, balance: wallet }
     return accountCache
+  }
+
+  /**
+   * Read the UncensoredLLM prepaid balance through the relay's OpenAI-compatible
+   * billing endpoint. The API key stays Host-side; a failed read keeps the last
+   * good figure and reports a stable error code. Cache TTL is two hours, matching
+   * the scheduled refresh cadence.
+   */
+  async function readUlmBalance(force) {
+    const now = Date.now()
+    if (force !== true && ulmCache !== null && now - ulmCache.at < BALANCE_TTL_MS) return ulmCache
+    if (ulmPending !== null) return ulmPending
+    ulmPending = (async () => {
+      let value = null
+      let error = null
+      try {
+        const resolved = await ctx.credentials.resolve(ULM_CREDENTIAL_REF)
+        const key = resolved === undefined || resolved === null
+          ? null
+          : typeof resolved === 'string' ? resolved : resolved.value
+        if (typeof key !== 'string' || key === '') throw new UsageError('ulm_missing_key')
+        const response = await fetch(ULM_SUBSCRIPTION_URL, {
+          headers: { authorization: `Bearer ${key}`, accept: 'application/json' },
+          signal: AbortSignal.timeout(ULM_TIMEOUT_MS),
+        })
+        const text = await response.text()
+        if (response.status === 401 || response.status === 403) throw new UsageError('ulm_auth')
+        if (!response.ok) throw new UsageError('ulm_http', `status ${response.status}`)
+        let parsed = null
+        try { parsed = JSON.parse(text) } catch { parsed = null }
+        if (parsed === null || typeof parsed.hard_limit_usd !== 'number' || !Number.isFinite(parsed.hard_limit_usd)) {
+          throw new UsageError('ulm_payload')
+        }
+        const available = roundMoney(parsed.hard_limit_usd)
+        value = {
+          currency: 'USD',
+          available,
+          low: available < ULM_LOW_BALANCE_USD,
+          hasPaymentMethod: parsed.has_payment_method === true,
+        }
+      } catch (caught) {
+        if (caught instanceof UsageError) {
+          error = caught.code === 'ulm_missing_key' || caught.code === 'ulm_auth' || caught.code === 'ulm_payload' || caught.code === 'ulm_http'
+            ? caught
+            : new UsageError('ulm_network', caught.message)
+        } else if (caught && (caught.name === 'TimeoutError' || caught.name === 'AbortError')) {
+          error = new UsageError('ulm_timeout')
+        } else {
+          error = new UsageError('ulm_network', caught && caught.message)
+        }
+        console.error('[deepseek-usage] uncensoredllm balance read failed:', error.message)
+      }
+      // Keep showing the last known balance when a refresh fails.
+      const previousValue = ulmCache === null ? null : ulmCache.value
+      ulmCache = {
+        at: Date.now(),
+        value: value === null ? previousValue : value,
+        error: error === null ? null : { code: error.code },
+      }
+      return ulmCache
+    })().finally(() => { ulmPending = null })
+    return ulmPending
+  }
+
+  /** Refresh both provider balances; the two-hour scheduler calls this. */
+  async function refreshBalances() {
+    accountCache = null
+    const ulm = await readUlmBalance(true)
+    return { deepseek: null, ulm: ulmSummary(ulm) }
   }
 
   /** Fetch every month that is missing or still incomplete, then rebuild the dataset. */
@@ -371,6 +526,265 @@ function addInto(map, name, row) {
   target.tokens += row.tokens
   target.cost += row.cost
   target.requests += row.requests
+}
+
+/**
+ * Client-facing summary of one cached UncensoredLLM balance read.
+ * @param cache - Host cache record, or null before the first attempt.
+ * @returns the balance block embedded in the status payload.
+ */
+function ulmSummary(cache) {
+  if (cache === null) {
+    return {
+      ok: false, currency: 'USD', available: null, low: false, hasPaymentMethod: null,
+      updatedAt: null, autoRefreshMs: BALANCE_REFRESH_INTERVAL_MS, error: { code: 'ulm_pending' },
+    }
+  }
+  const value = cache.value
+  return {
+    ok: value !== null,
+    currency: 'USD',
+    available: value === null ? null : value.available,
+    low: value === null ? false : value.low,
+    hasPaymentMethod: value === null ? null : value.hasPaymentMethod,
+    updatedAt: cache.at,
+    autoRefreshMs: BALANCE_REFRESH_INTERVAL_MS,
+    error: cache.error === null ? null : { code: cache.error.code },
+  }
+}
+
+/** Magic bytes that start one zstd frame. */
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+
+/** Decode every zstd frame in an append-only `.jsonl.zstd` Session log. */
+function decodeSessionLog(buffer) {
+  if (buffer.length < 4) return ''
+  const frames = []
+  let index = buffer.indexOf(ZSTD_MAGIC)
+  while (index !== -1) {
+    frames.push(index)
+    index = buffer.indexOf(ZSTD_MAGIC, index + 4)
+  }
+  if (frames.length === 0) return buffer.toString('utf8')
+  let text = ''
+  for (let i = 0; i < frames.length; i += 1) {
+    const start = frames[i]
+    const end = i + 1 < frames.length ? frames[i + 1] : buffer.length
+    try {
+      text += zstdDecompressSync(buffer.subarray(start, end)).toString('utf8')
+    } catch (error) {
+      void error
+    }
+  }
+  return text
+}
+
+/**
+ * Fold one decoded Session log into per-day/per-model UncensoredLLM rows.
+ * Every model reply stores the provider, model and token usage in its
+ * `assistant/message` event; only that relay's rows are kept.
+ */
+function extractLocalUsageRows(text) {
+  const rows = new Map()
+  for (const line of text.split('\n')) {
+    if (line.indexOf('assistant/message') === -1) continue
+    let event
+    try { event = JSON.parse(line) } catch { continue }
+    if (event === null || typeof event !== 'object' || event.type !== 'assistant/message') continue
+    const data = event.data
+    if (data === null || typeof data !== 'object') continue
+    const message = data.message
+    const source = message !== null && typeof message === 'object' ? message.source : null
+    if (source === null || typeof source !== 'object' || source.provider !== ULM_PROVIDER) continue
+    const usage = data.usage
+    if (usage === null || typeof usage !== 'object' || typeof event.time !== 'number') continue
+    const model = typeof source.model === 'string' && source.model !== '' ? source.model : 'unknown'
+    const date = new Date(event.time).toISOString().slice(0, 10)
+    const key = date + '\u0000' + model
+    let row = rows.get(key)
+    if (row === undefined) {
+      row = { date, model, tokens: 0, input: 0, output: 0, cache: 0, requests: 0 }
+      rows.set(key, row)
+    }
+    row.tokens += Math.max(0, Number(usage.totalTokens) || 0)
+    row.input += Math.max(0, Number(usage.inputTokens) || 0)
+    row.output += Math.max(0, Number(usage.outputTokens) || 0)
+    row.cache += Math.max(0, Number(usage.cacheReadTokens) || 0)
+    row.requests += 1
+  }
+  return [...rows.values()]
+}
+
+/**
+ * Session-log backed UncensoredLLM usage. One scan walks every Session
+ * directory once, decodes only logs whose size or mtime changed, and caches the
+ * compact per-file rows; the merged aggregate is cheap to recompute.
+ */
+function createLocalUsageStore() {
+  /** @type {Map<string, {mtime: number, size: number, rows: Array<object>}>} */
+  const files = new Map()
+  /** @type {null | {at: number, rows: Array<object>, files: number, sessions: number}} */
+  let cache = null
+  /** @type {null | Promise<object>} */
+  let pending = null
+
+  return { read, invalidate }
+
+  function invalidate() {
+    cache = null
+  }
+
+  async function read(force) {
+    if (force !== true && cache !== null && Date.now() - cache.at < SESSION_SCAN_TTL_MS) return cache
+    if (pending !== null) return pending
+    pending = (async () => {
+      const snapshot = scan()
+      cache = { at: Date.now(), rows: snapshot.rows, files: snapshot.files, sessions: snapshot.sessions }
+      return cache
+    })().finally(() => { pending = null })
+    return pending
+  }
+
+  function scan() {
+    const root = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
+    let workspaces = []
+    try {
+      workspaces = readdirSync(root)
+    } catch (error) {
+      void error
+    }
+    const seen = new Set()
+    let fileCount = 0
+    let sessionCount = 0
+    for (const workspace of workspaces) {
+      const base = join(root, workspace)
+      let sessions = []
+      try {
+        sessions = readdirSync(base)
+      } catch (error) {
+        void error
+        continue
+      }
+      for (const session of sessions) {
+        const child = join(base, session)
+        let names
+        try {
+          if (!statSync(child).isDirectory()) continue
+          names = readdirSync(child)
+        } catch (error) {
+          void error
+          continue
+        }
+        for (const name of names) {
+          if (!name.endsWith('.jsonl') && !name.endsWith('.jsonl.zstd')) continue
+          const file = join(child, name)
+          let info
+          try {
+            info = statSync(file)
+          } catch (error) {
+            void error
+            continue
+          }
+          fileCount += 1
+          seen.add(file)
+          const previous = files.get(file)
+          if (previous !== undefined && previous.mtime === info.mtimeMs && previous.size === info.size) {
+            if (previous.rows.length > 0) sessionCount += 1
+            continue
+          }
+          let buffer
+          try {
+            buffer = readFileSync(file)
+          } catch (error) {
+            void error
+            continue
+          }
+          let text = ''
+          try {
+            text = name.endsWith('.zstd') ? decodeSessionLog(buffer) : buffer.toString('utf8')
+          } catch (error) {
+            void error
+          }
+          const rows = text === '' ? [] : extractLocalUsageRows(text)
+          files.set(file, { mtime: info.mtimeMs, size: info.size, rows })
+          if (rows.length > 0) sessionCount += 1
+        }
+      }
+    }
+    for (const file of [...files.keys()]) if (!seen.has(file)) files.delete(file)
+    const merged = new Map()
+    for (const record of files.values()) {
+      for (const row of record.rows) {
+        const key = row.date + '\u0000' + row.model
+        const target = merged.get(key)
+        if (target === undefined) {
+          merged.set(key, Object.assign({}, row))
+        } else {
+          target.tokens += row.tokens
+          target.input += row.input
+          target.output += row.output
+          target.cache += row.cache
+          target.requests += row.requests
+        }
+      }
+    }
+    return { rows: [...merged.values()], files: fileCount, sessions: sessionCount }
+  }
+}
+
+/** Filter and aggregate the local UncensoredLLM rows for one query. */
+function summarizeLocalUsage(data, query) {
+  const from = query.from === undefined ? null : query.from
+  const to = query.to === undefined ? null : query.to
+  const model = query.model === undefined ? null : query.model
+  const totals = { tokens: 0, input: 0, output: 0, cache: 0, requests: 0 }
+  const byDay = new Map()
+  const byModel = new Map()
+  let firstDate = null
+  let lastDate = null
+  for (const row of data.rows) {
+    if (from !== null && row.date < from) continue
+    if (to !== null && row.date > to) continue
+    if (model !== null && row.model !== model) continue
+    totals.tokens += row.tokens
+    totals.input += row.input
+    totals.output += row.output
+    totals.cache += row.cache
+    totals.requests += row.requests
+    if (firstDate === null || row.date < firstDate) firstDate = row.date
+    if (lastDate === null || row.date > lastDate) lastDate = row.date
+    const day = byDay.get(row.date)
+    if (day === undefined) {
+      byDay.set(row.date, { date: row.date, tokens: row.tokens, requests: row.requests })
+    } else {
+      day.tokens += row.tokens
+      day.requests += row.requests
+    }
+    const entry = byModel.get(row.model)
+    if (entry === undefined) {
+      byModel.set(row.model, {
+        model: row.model, tokens: row.tokens, input: row.input,
+        output: row.output, cache: row.cache, requests: row.requests,
+      })
+    } else {
+      entry.tokens += row.tokens
+      entry.input += row.input
+      entry.output += row.output
+      entry.cache += row.cache
+      entry.requests += row.requests
+    }
+  }
+  return {
+    provider: ULM_PROVIDER,
+    source: 'session-log',
+    firstDate,
+    lastDate,
+    totals,
+    byDay: [...byDay.values()].sort((left, right) => (left.date < right.date ? -1 : 1)),
+    byModel: [...byModel.values()].sort((left, right) => right.tokens - left.tokens),
+    scannedAt: data.at,
+    sessions: data.sessions,
+  }
 }
 
 /** Parse and validate the overview query string. */

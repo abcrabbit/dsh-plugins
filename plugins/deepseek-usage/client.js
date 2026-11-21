@@ -17,11 +17,16 @@ window.__ModuleLoader__.load({
     const ROUTES = {
       status: '/deepseek-usage/v1/status',
       overview: '/deepseek-usage/v1/overview',
+      localUsage: '/deepseek-usage/v1/local-usage',
       refresh: '/deepseek-usage/v1/refresh',
     }
     /** First-sync poll cadence and ceiling (1.5s x 200 is about five minutes). */
     const SYNC_POLL_MS = 1500
     const SYNC_POLL_MAX = 200
+    /** Both provider balances refresh about every two hours. */
+    const BALANCES_AUTO_REFRESH_MS = 2 * 60 * 60 * 1000
+    /** UncensoredLLM prepaid balance (USD) below which the entry warns. */
+    const ULM_LOW_BALANCE_USD = 2
     /** Platform model row naming tool/function-call fees. */
     const MODEL_TOOL = 'tool'
     /** Time-range presets; order is the select order. */
@@ -59,8 +64,12 @@ window.__ModuleLoader__.load({
      */
     const ZH = {
       "footer.label": "余额/Token",
-      "footer.aria": "余额 / Token 用量",
-      "footer.hint": "查看 DeepSeek 余额与用量",
+      "footer.aria": "DeepSeek 与 UncensoredLLM 余额",
+      "footer.hint": "查看 DeepSeek 与 UncensoredLLM 余额和用量（约每 2 小时自动刷新）",
+      "footer.ds": "DS",
+      "footer.ulm": "uLlm",
+      "footer.loading": "…",
+      "footer.balancesHint": "DeepSeek {ds} · UncensoredLLM {ulm}（约每 2 小时自动刷新）",
       "panel.title": "余额 / Token",
       "back": "返回会话",
       "refresh": "刷新",
@@ -88,9 +97,32 @@ window.__ModuleLoader__.load({
       "error.unknown": "未知错误，请重试",
       "error.rangeRequired": "请选择开始日期和结束日期",
       "error.range": "开始日期不能晚于结束日期",
-      "card.balance": "账户余额",
+      "card.balance": "DeepSeek 余额",
       "card.bonus": "赠送余额 {amount}",
       "card.balanceUnavailable": "余额暂不可用",
+      "card.ulmBalance": "UncensoredLLM 余额",
+      "card.ulmSub": "约每 2 小时自动刷新 · {time}",
+      "card.ulmUnavailable": "余额暂不可用",
+      "card.ulmPending": "正在同步 UncensoredLLM 余额…",
+      "card.ulmLow": "余额偏低，请及时充值",
+      "balance.providersNote": "用量明细：DeepSeek 来自开放平台账单；UncensoredLLM 的 Token 用量来自本机会话日志。",
+      "local.title": "UncensoredLLM Token 用量（本机记录）",
+      "local.hint": "来自 DSH 本机会话日志，按 UTC 日统计；与中转账单可能有差异",
+      "local.sessions": "{count} 个会话",
+      "combined.title": "Token 用量总览（DeepSeek + UncensoredLLM）",
+      "combined.hint": "两家合计，随下方时间范围联动",
+      "combined.totalTokens": "合计 Token",
+      "combined.totalRequests": "合计调用次数",
+      "combined.deepseek": "DeepSeek",
+      "combined.uncensored": "UncensoredLLM",
+      "combined.legend": "柱状图底部为 DeepSeek，顶部为 UncensoredLLM",
+      "provider.deepseek": "DeepSeek 用量",
+      "provider.deepseekHint": "来自 DeepSeek 开放平台账单",
+      "provider.uncensored": "UncensoredLLM 用量（本机记录）",
+      "provider.uncensoredHint": "来自 DSH 本机会话日志，可能少于中转账单",
+      "column.input": "输入 Token",
+      "column.output": "输出 Token",
+      "column.cache": "缓存命中 Token",
       "card.totalCost": "累计消费",
       "card.totalTokens": "累计 Token",
       "card.totalRequests": "累计调用次数",
@@ -134,8 +166,12 @@ window.__ModuleLoader__.load({
     }
     const EN = {
       "footer.label": "Balance/Token",
-      "footer.aria": "Balance and token usage",
-      "footer.hint": "View DeepSeek balance and usage",
+      "footer.aria": "DeepSeek and UncensoredLLM balances",
+      "footer.hint": "View DeepSeek and UncensoredLLM balances and usage (auto-refreshes about every 2 hours)",
+      "footer.ds": "DS",
+      "footer.ulm": "uLlm",
+      "footer.loading": "…",
+      "footer.balancesHint": "DeepSeek {ds} · UncensoredLLM {ulm} (auto-refreshes about every 2 hours)",
       "panel.title": "Balance / Token",
       "back": "Back to conversation",
       "refresh": "Refresh",
@@ -163,9 +199,32 @@ window.__ModuleLoader__.load({
       "error.unknown": "Unknown error. Try again.",
       "error.rangeRequired": "Choose both a start date and an end date",
       "error.range": "The start date cannot be after the end date",
-      "card.balance": "Account balance",
+      "card.balance": "DeepSeek balance",
       "card.bonus": "Granted balance {amount}",
       "card.balanceUnavailable": "Balance unavailable",
+      "card.ulmBalance": "UncensoredLLM balance",
+      "card.ulmSub": "Auto-refreshes about every 2 hours · {time}",
+      "card.ulmUnavailable": "Balance unavailable",
+      "card.ulmPending": "Syncing UncensoredLLM balance…",
+      "card.ulmLow": "Low balance — top up soon",
+      "balance.providersNote": "Usage details: DeepSeek comes from the platform bill; UncensoredLLM token usage comes from local Session logs.",
+      "local.title": "UncensoredLLM token usage (local records)",
+      "local.hint": "Folded from DSH local Session logs and counted by UTC day; may differ from the relay bill",
+      "local.sessions": "{count} sessions",
+      "combined.title": "Token usage overview (DeepSeek + UncensoredLLM)",
+      "combined.hint": "Both providers combined; follows the date range below",
+      "combined.totalTokens": "Total tokens",
+      "combined.totalRequests": "Total requests",
+      "combined.deepseek": "DeepSeek",
+      "combined.uncensored": "UncensoredLLM",
+      "combined.legend": "Bars: DeepSeek at the bottom, UncensoredLLM on top",
+      "provider.deepseek": "DeepSeek usage",
+      "provider.deepseekHint": "From the DeepSeek platform bill",
+      "provider.uncensored": "UncensoredLLM usage (local records)",
+      "provider.uncensoredHint": "From DSH local Session logs; may be lower than the relay bill",
+      "column.input": "Input tokens",
+      "column.output": "Output tokens",
+      "column.cache": "Cache-hit tokens",
       "card.totalCost": "Total spend",
       "card.totalTokens": "Total tokens",
       "card.totalRequests": "Total requests",
@@ -222,6 +281,15 @@ window.__ModuleLoader__.load({
       brand: 'var(--dsw-alias-brand-primary)',
       danger: 'var(--dsw-alias-state-error-primary)',
       warn: 'var(--dsw-alias-state-warn-primary)',
+      // Provider accents (their own brand hues, tuned for both themes).
+      dsAccent: '#4D6BFE',
+      dsAccentSoft: 'rgba(77, 107, 254, 0.14)',
+      dsAccentFaint: 'rgba(77, 107, 254, 0.07)',
+      dsAccentStroke: 'rgba(77, 107, 254, 0.42)',
+      ulmAccent: '#E39A2D',
+      ulmAccentSoft: 'rgba(227, 154, 45, 0.18)',
+      ulmAccentFaint: 'rgba(227, 154, 45, 0.09)',
+      ulmAccentStroke: 'rgba(227, 154, 45, 0.48)',
     }
 
     /** Number/cost/date formatting shared by every table and card. */
@@ -258,6 +326,16 @@ window.__ModuleLoader__.load({
       if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim())) return symbol + value.trim()
       const number = Number(value)
       return Number.isFinite(number) ? symbol + formatCost(number) : '—'
+    }
+    /** Prepaid USD credit is shown with exactly two decimals: $25.64. */
+    function formatUsd(value) {
+      const number = Number(value)
+      if (!Number.isFinite(number)) return '—'
+      try {
+        return '$' + new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number)
+      } catch (error) {
+        return '$' + number.toFixed(2)
+      }
     }
     function formatDateTime(timestamp) {
       if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return null
@@ -351,8 +429,10 @@ window.__ModuleLoader__.load({
         : response.status === 401 || response.status === 403 ? 'unauthorized' : 'unknown'
       throw new UsageRequestError(code, payload !== null && typeof payload === 'object' && typeof payload.message === 'string' ? payload.message : undefined)
     }
-    function fetchStatus() {
-      return requestJson(ROUTES.status)
+    function fetchStatus(options) {
+      return requestJson(options !== undefined && options !== null && options.light === true
+        ? ROUTES.status + '?light=1'
+        : ROUTES.status)
     }
     function fetchOverview(filters) {
       const params = new URLSearchParams()
@@ -364,6 +444,16 @@ window.__ModuleLoader__.load({
       if (filters.model) params.set('model', filters.model)
       const query = params.toString()
       return requestJson(ROUTES.overview + (query === '' ? '' : '?' + query))
+    }
+    /** UncensoredLLM token usage folded from local Session logs. */
+    function fetchLocalUsage(filters) {
+      const params = new URLSearchParams()
+      if (filters.from && filters.to) {
+        params.set('from', filters.from)
+        params.set('to', filters.to)
+      }
+      const query = params.toString()
+      return requestJson(ROUTES.localUsage + (query === '' ? '' : '?' + query))
     }
     function postRefresh() {
       return requestJson(ROUTES.refresh, { method: 'POST' })
@@ -511,6 +601,15 @@ window.__ModuleLoader__.load({
       statusTitle: { margin: 0, fontSize: 16, fontWeight: 600, lineHeight: '24px', color: TOKENS.label },
       statusHint: { margin: 0, fontSize: 13, lineHeight: '22px', color: TOKENS.label2, overflowWrap: 'anywhere' },
       footerLabel: { minWidth: 0, flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      footerBalances: {
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'stretch',
+        gap: 0, minWidth: 0, flex: '1 1 auto', overflow: 'hidden',
+      },
+      footerBalanceLine: {
+        fontSize: 11, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden',
+        textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums', color: TOKENS.label2,
+      },
+      footerBalanceProvider: { color: TOKENS.label3, fontWeight: 600 },
     }
 
     /** Native-looking button: hover/focus handled with React state (inline styles only). */
@@ -556,21 +655,36 @@ window.__ModuleLoader__.load({
       }, props.children)
     }
 
-    function StatCard({ label, value, sub }) {
-      return h('div', { style: S.card },
-        h('div', { style: S.cardLabel }, label),
-        h('div', { style: S.cardValue }, value),
-        sub === undefined || sub === null || sub === '' ? null : h('div', { style: S.cardSub }, sub))
+    function StatCard({ label, value, sub, danger, accent }) {
+      const tone = accent === 'ds'
+        ? { accent: TOKENS.dsAccent, fill: TOKENS.dsAccentFaint, stroke: TOKENS.dsAccentStroke }
+        : accent === 'ulm'
+          ? { accent: TOKENS.ulmAccent, fill: TOKENS.ulmAccentFaint, stroke: TOKENS.ulmAccentStroke }
+          : null
+      const cardStyle = tone === null ? S.card : Object.assign({}, S.card, { background: tone.fill, borderColor: tone.stroke })
+      const labelStyle = tone === null ? S.cardLabel : Object.assign({}, S.cardLabel, { color: tone.accent, fontWeight: 600 })
+      const valueStyle = danger === true
+        ? Object.assign({}, S.cardValue, { color: TOKENS.danger })
+        : S.cardValue
+      const subStyle = danger === true
+        ? Object.assign({}, S.cardSub, { color: TOKENS.danger })
+        : S.cardSub
+      return h('div', { style: cardStyle },
+        h('div', { style: labelStyle }, label),
+        h('div', { style: valueStyle }, value),
+        sub === undefined || sub === null || sub === '' ? null : h('div', { style: subStyle }, sub))
     }
     function Field({ label, children }) {
       return h('label', { style: S.field },
         h('span', { style: S.fieldLabel }, label),
         children)
     }
-    function Section({ title, hint, children }) {
+    function Section({ title, hint, children, accent }) {
+      const dot = accent === 'ds' ? TOKENS.dsAccent : accent === 'ulm' ? TOKENS.ulmAccent : null
       return h('section', { style: S.section },
         h('div', { style: S.sectionHead },
-          h('h2', { style: S.sectionTitle }, title),
+          h('h2', { style: dot === null ? S.sectionTitle : Object.assign({}, S.sectionTitle, { display: 'inline-flex', alignItems: 'center', gap: 8 }) },
+            dot === null ? title : [h('span', { key: 'dot', style: { width: 9, height: 9, borderRadius: '50%', background: dot, flex: 'none' } }), title]),
           hint === undefined ? null : h('span', { style: S.sectionHint }, hint)),
         children)
     }
@@ -631,6 +745,62 @@ window.__ModuleLoader__.load({
       const buttonRef = useRef(null)
       const splitRef = useRef(null)
       const label = t('footer.label')
+      const [balances, setBalances] = useState(null)
+
+      // The entry shows both provider balances even while the panel is closed:
+      // fetch once on mount, then about every two hours (and when the page
+      // becomes visible again after being in the background for a while).
+      useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        let alive = true
+        let timer = 0
+        let retryTimer = 0
+        let attempts = 0
+        const load = async () => {
+          try {
+            const next = await fetchStatus({ light: true })
+            if (!alive) return
+            const value = next !== null && typeof next === 'object' && next.balances !== null && typeof next.balances === 'object'
+              ? next.balances
+              : null
+            setBalances(value)
+            attempts = 0
+            if (retryTimer !== 0) {
+              window.clearTimeout(retryTimer)
+              retryTimer = 0
+            }
+          } catch (error) {
+            // The Host may still be registering its routes right after a
+            // reload/restart; back off and retry instead of staying blank
+            // until the next two-hour tick.
+            if (!alive) return
+            if (attempts >= 6) {
+              // Keep the entry readable even when the local Host is unavailable.
+              setBalances({ deepseek: null, ulm: null })
+              return
+            }
+            attempts += 1
+            retryTimer = window.setTimeout(() => {
+              retryTimer = 0
+              void load()
+            }, Math.min(15000, Math.round(1500 * Math.pow(1.7, attempts))))
+          }
+        }
+        void load()
+        timer = window.setInterval(() => { void load() }, BALANCES_AUTO_REFRESH_MS)
+        const onVisible = () => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') void load()
+        }
+        if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
+        return () => {
+          alive = false
+          window.clearInterval(timer)
+          if (retryTimer !== 0) window.clearTimeout(retryTimer)
+          if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+        }
+        // Mount-only: the cadence is owned by BALANCES_AUTO_REFRESH_MS.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [])
 
       useLayoutEffect(() => {
         if (!wide || typeof window === 'undefined') {
@@ -736,6 +906,16 @@ window.__ModuleLoader__.load({
         }
       }, [wide])
 
+      const dsBalance = balances !== null && balances.deepseek !== null && typeof balances.deepseek === 'object' ? balances.deepseek : null
+      const ulmBalance = balances !== null && balances.ulm !== null && typeof balances.ulm === 'object' ? balances.ulm : null
+      const dsText = balances === null
+        ? t('footer.loading')
+        : dsBalance === null ? '—' : formatBalance(dsBalance.total, dsBalance.currency || 'CNY')
+      const ulmText = balances === null
+        ? t('footer.loading')
+        : ulmBalance === null || ulmBalance.available === null ? '—' : formatUsd(ulmBalance.available)
+      const ulmLow = ulmBalance !== null && ulmBalance.low === true
+      const balancesHint = balances === null ? t('footer.hint') : t('footer.balancesHint', { ds: dsText, ulm: ulmText })
       const compact = split !== null && split.compact === true
       const rowStyle = split === null ? {} : {
         width: split.width, height: split.height, marginBottom: -split.height,
@@ -751,8 +931,8 @@ window.__ModuleLoader__.load({
         ref: buttonRef,
         type: 'button',
         'data-testid': 'usage-footer-entry',
-        'aria-label': t('footer.aria'),
-        title: t('footer.hint'),
+        'aria-label': balancesHint,
+        title: balancesHint,
         onClick: props.onSelect,
         onMouseEnter: () => setHovered(true),
         onMouseLeave: () => setHovered(false),
@@ -774,17 +954,42 @@ window.__ModuleLoader__.load({
           textAlign: 'left', cursor: 'pointer', outline: 'none',
           boxShadow: focused ? '0 0 0 var(--dsw-focus-ring-width, 2px) var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary))' : 'none',
         }, rowStyle),
-      }, h('span', {
-        // The user asked for the RMB currency sign instead of a wallet glyph.
+      }, wide ? h('span', {
+        style: {
+          display: 'flex', alignItems: 'center', gap: compact ? 4 : 6,
+          minWidth: 0, flex: '1 1 auto', overflow: 'hidden',
+        },
+        'aria-hidden': 'true',
+      }, [
+        // The currency glyph stays visible in both the wide and rail layouts.
+        h('span', {
+          key: 'glyph',
+          style: {
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: compact ? 12 : 14, flex: 'none',
+            fontSize: compact ? 12 : 14, fontWeight: 600, lineHeight: 1, color: TOKENS.label2,
+          },
+        }, '¥'),
+        h('span', { key: 'balances', style: S.footerBalances }, [
+          h('span', { key: 'ds', style: S.footerBalanceLine },
+            h('span', { style: Object.assign({}, S.footerBalanceProvider, { color: TOKENS.dsAccent }) }, t('footer.ds') + ' '),
+            h('span', null, dsText)),
+          h('span', {
+            key: 'ulm',
+            style: ulmLow ? Object.assign({}, S.footerBalanceLine, { color: TOKENS.danger }) : S.footerBalanceLine,
+          },
+            h('span', { style: Object.assign({}, S.footerBalanceProvider, { color: TOKENS.ulmAccent }) }, t('footer.ulm') + ' '),
+            h('span', null, ulmText)),
+        ]),
+      ]) : h('span', {
+        // Rail mode has no room for text; keep the currency glyph.
         'aria-hidden': 'true',
         style: {
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: wide ? (compact ? 16 : 20) : 18, height: wide ? (compact ? 16 : 20) : 18, flex: 'none',
-          fontSize: wide ? (compact ? 15 : 17) : 16, fontWeight: 600, lineHeight: 1,
+          width: 18, height: 18, flex: 'none',
+          fontSize: 16, fontWeight: 600, lineHeight: 1,
         },
-      }, '¥'), wide ? h('span', {
-        style: compact ? Object.assign({}, S.footerLabel, { fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) : S.footerLabel,
-      }, label) : null)
+      }, '¥'))
     }
 
     /** The global main-panel page: balance cards, filters, summary, chart, tables. */
@@ -799,6 +1004,7 @@ window.__ModuleLoader__.load({
       const [refreshing, setRefreshing] = useState(false)
       const [refreshError, setRefreshError] = useState(null)
       const [allTime, setAllTime] = useState(null)
+      const [localUsage, setLocalUsage] = useState(null)
       const [view, setView] = useState({ data: null, loading: false, error: null })
       const [preset, setPreset] = useState('all')
       const [keyFilter, setKeyFilter] = useState('')
@@ -835,6 +1041,38 @@ window.__ModuleLoader__.load({
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [])
 
+      // Keep the balance cards fresh while the panel is open: re-read the status
+      // payload about every two hours (the scheduler's cadence) without touching
+      // the usage history that stays valid for the cached dataset.
+      useEffect(() => {
+        if (typeof window === 'undefined') return undefined
+        let alive = true
+        const refreshBalancesOnly = async () => {
+          try {
+            const next = await fetchStatus({ light: true })
+            if (!alive) return
+            setStatus(next)
+            setStaleError(next.error || null)
+            // Session logs can grow between panel loads; refresh the local fold too.
+            void loadLocalUsage()
+          } catch (error) {
+            void error
+          }
+        }
+        const timer = window.setInterval(() => { void refreshBalancesOnly() }, BALANCES_AUTO_REFRESH_MS)
+        const onVisible = () => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') void refreshBalancesOnly()
+        }
+        if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible)
+        return () => {
+          alive = false
+          window.clearInterval(timer)
+          if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible)
+        }
+        // Mount-only cadence; balances-only refresh keeps the history untouched.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [])
+
       function currentFilters() {
         return Object.assign({}, filtersRef.current)
       }
@@ -846,6 +1084,17 @@ window.__ModuleLoader__.load({
         }
         return data
       }
+      /** UncensoredLLM token usage from local Session logs for the active range. */
+      async function loadLocalUsage(nextFilters) {
+        const filters = nextFilters || currentFilters()
+        const range = rangeForPreset(filters.preset, filters.customFrom, filters.customTo)
+        try {
+          const data = await fetchLocalUsage({ from: range.from, to: range.to })
+          if (aliveRef.current) setLocalUsage(data)
+        } catch (error) {
+          if (aliveRef.current) setLocalUsage(null)
+        }
+      }
       /**
        * Fetch the overview for one filter set. All-time-equivalent requests reuse
        * the already loaded all-history payload instead of hitting the route again.
@@ -856,6 +1105,8 @@ window.__ModuleLoader__.load({
         const isAllTime = !range.from && !filters.keyFilter && !filters.modelFilter
         const sequence = ++viewSeqRef.current
         setView((previous) => ({ data: previous.data, loading: true, error: null }))
+        // The local relay-usage fold is independent of the DeepSeek overview.
+        void loadLocalUsage(filters)
         const cachedAllTime = allTimeRef.current
         if (isAllTime && cachedAllTime !== null) {
           if (aliveRef.current && sequence === viewSeqRef.current) {
@@ -1040,6 +1291,16 @@ window.__ModuleLoader__.load({
 
       const describeError = (error) => t(errorKey(error))
       const balance = status !== null && status.balance !== null && typeof status.balance === 'object' ? status.balance : null
+      const balances = status !== null && status.balances !== null && typeof status.balances === 'object' ? status.balances : null
+      const dsBalance = balances !== null && balances.deepseek !== null && typeof balances.deepseek === 'object' ? balances.deepseek : balance
+      const ulm = balances !== null && balances.ulm !== null && typeof balances.ulm === 'object' ? balances.ulm : null
+      const ulmSub = ulm === null
+        ? t('card.ulmPending')
+        : ulm.available === null
+          ? t('card.ulmUnavailable')
+          : ulm.low === true
+            ? t('card.ulmLow')
+            : t('card.ulmSub', { time: formatDateTime(ulm.updatedAt) || t('time.never') })
       const totals = allTime !== null && allTime.totals !== null && typeof allTime.totals === 'object' ? allTime.totals : null
       const currency = (allTime !== null && typeof allTime.currency === 'string' ? allTime.currency : null)
         || (balance !== null && typeof balance.currency === 'string' ? balance.currency : null)
@@ -1102,17 +1363,22 @@ window.__ModuleLoader__.load({
           h('span', { style: S.bannerText }, message))
       }
 
-      function summaryStat(label, value, key) {
+      function summaryStat(label, value, key, color) {
         return h('div', { key, style: S.summaryStat },
           h('span', { style: S.summaryLabel }, label),
-          h('span', { style: S.summaryValue }, value))
+          h('span', { style: color === undefined ? S.summaryValue : Object.assign({}, S.summaryValue, { color }) }, value))
+      }
+      function legendItem(color, label) {
+        return h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: 6 } },
+          h('span', { style: { width: 10, height: 10, borderRadius: 3, background: color, flex: 'none' } }),
+          label)
       }
       function renderSummary() {
         if (viewData === null) return null
         const dataTotals = viewData.totals !== null && typeof viewData.totals === 'object' ? viewData.totals : { tokens: 0, cost: 0, requests: 0 }
         const period = viewData.from && viewData.to ? viewData.from + ' ~ ' + viewData.to : t('summary.allTime')
         return h('div', { style: S.summary, 'data-testid': TID.summary },
-          summaryStat(t('summary.tokens'), formatInteger(dataTotals.tokens), 'tokens'),
+          summaryStat(t('summary.tokens'), formatInteger(dataTotals.tokens), 'tokens', TOKENS.dsAccent),
           summaryStat(t('summary.cost'), formatMoney(dataTotals.cost, viewCurrency), 'cost'),
           summaryStat(t('summary.requests'), t('unit.times', { value: formatInteger(dataTotals.requests) }), 'requests'),
           summaryStat(t('summary.period'), period, 'period'),
@@ -1130,7 +1396,10 @@ window.__ModuleLoader__.load({
               const ratio = max > 0 ? tokens / max : 0
               return h('div', {
                 key: day.date,
-                style: Object.assign({}, S.chartBar, { height: (ratio * 100) + '%' }),
+                style: Object.assign({}, S.chartBar, {
+                  height: (ratio * 100) + '%',
+                  background: 'linear-gradient(180deg, #6B85FF, #4D6BFE)',
+                }),
                 title: t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
               })
             })),
@@ -1199,22 +1468,148 @@ window.__ModuleLoader__.load({
                     h('td', { style: S.tdNum }, formatMoney(row.cost, viewCurrency)),
                     h('td', { style: S.tdNum }, formatInteger(row.requests))))))))
       }
+      /** Combined DeepSeek + UncensoredLLM token totals pinned to the top. */
+      function renderCombinedOverview() {
+        const dsTotals = viewData !== null && viewData.totals !== null && typeof viewData.totals === 'object' ? viewData.totals : null
+        const ulmTotals = localUsage !== null && localUsage.totals !== null && typeof localUsage.totals === 'object' ? localUsage.totals : null
+        if (dsTotals === null && ulmTotals === null) return null
+        const dsTokens = dsTotals === null ? 0 : Number(dsTotals.tokens) || 0
+        const ulmTokens = ulmTotals === null ? 0 : Number(ulmTotals.tokens) || 0
+        const dsRequests = dsTotals === null ? 0 : Number(dsTotals.requests) || 0
+        const ulmRequests = ulmTotals === null ? 0 : Number(ulmTotals.requests) || 0
+        const period = viewData !== null && typeof viewData.from === 'string' && typeof viewData.to === 'string'
+          ? viewData.from + ' ~ ' + viewData.to
+          : t('summary.allTime')
+        // Merge both daily series so one bar shows how each day splits.
+        const days = new Map()
+        if (viewData !== null && Array.isArray(viewData.byDay)) {
+          for (const day of viewData.byDay) days.set(day.date, { ds: Number(day.tokens) || 0, ulm: 0 })
+        }
+        if (localUsage !== null && Array.isArray(localUsage.byDay)) {
+          for (const day of localUsage.byDay) {
+            const ulm = Number(day.tokens) || 0
+            const existing = days.get(day.date)
+            if (existing === undefined) days.set(day.date, { ds: 0, ulm })
+            else existing.ulm = ulm
+          }
+        }
+        const sorted = [...days.entries()].sort((left, right) => (left[0] < right[0] ? -1 : 1))
+        const max = sorted.reduce((peak, entry) => Math.max(peak, entry[1].ds + entry[1].ulm), 0)
+        return h(Section, { title: t('combined.title'), hint: t('combined.hint') },
+          h('div', {
+            style: Object.assign({}, S.summary, { background: 'linear-gradient(90deg, rgba(77, 107, 254, 0.08), rgba(227, 154, 45, 0.10))' }),
+            'data-testid': 'usage-combined-summary',
+          },
+            summaryStat(t('combined.totalTokens'), formatInteger(dsTokens + ulmTokens), 'total'),
+            summaryStat(t('combined.deepseek'), formatInteger(dsTokens), 'ds', TOKENS.dsAccent),
+            summaryStat(t('combined.uncensored'), formatInteger(ulmTokens), 'ulm', TOKENS.ulmAccent),
+            summaryStat(t('combined.totalRequests'), t('unit.times', { value: formatInteger(dsRequests + ulmRequests) }), 'requests'),
+            summaryStat(t('summary.period'), period, 'period')),
+          sorted.length === 0 ? null : h('div', { style: { marginTop: 16 } },
+            h('div', { style: Object.assign({}, S.chart, { gap: 3, justifyContent: 'flex-start' }), role: 'img', 'aria-label': t('combined.title') },
+              sorted.map((entry) => {
+                const date = entry[0]
+                const ds = entry[1].ds
+                const ulm = entry[1].ulm
+                const total = ds + ulm
+                const ratio = max > 0 ? total / max : 0
+                const ulmShare = total > 0 ? (ulm / total) * 100 : 0
+                return h('div', {
+                  key: date,
+                  title: t('chart.dayHint', { date, tokens: formatInteger(total) }),
+                  style: Object.assign({}, S.chartBar, {
+                    height: (ratio * 100) + '%', maxWidth: 36, flex: '1 1 0',
+                    display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+                    overflow: 'hidden', background: 'transparent',
+                  }),
+                }, [
+                  h('div', { key: 'ulm', style: { height: ulmShare + '%', background: TOKENS.ulmAccent } }),
+                  h('div', { key: 'ds', style: { flex: '1 1 auto', background: 'linear-gradient(180deg, #6B85FF, #4D6BFE)' } }),
+                ])
+              })),
+            h('div', { style: S.chartAxis },
+              h('span', null, sorted[0][0]),
+              h('span', null, sorted[sorted.length - 1][0])),
+            h('div', { style: { marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 18px', fontSize: 12, lineHeight: '18px', color: TOKENS.label3 } },
+              legendItem(TOKENS.dsAccent, t('combined.deepseek')),
+              legendItem(TOKENS.ulmAccent, t('combined.uncensored')),
+              h('span', { style: { color: TOKENS.label3 } }, t('combined.legend')))))
+      }
+      /** UncensoredLLM token usage folded from local Session logs. */
+      function renderLocalUsage() {
+        if (localUsage === null || typeof localUsage !== 'object') return null
+        const usageTotals = localUsage.totals !== null && typeof localUsage.totals === 'object' ? localUsage.totals : null
+        if (usageTotals === null || Number(usageTotals.requests) <= 0) return null
+        const days = Array.isArray(localUsage.byDay) ? localUsage.byDay.slice() : []
+        const models = Array.isArray(localUsage.byModel) ? localUsage.byModel : []
+        const period = typeof localUsage.firstDate === 'string' && typeof localUsage.lastDate === 'string'
+          ? localUsage.firstDate + ' ~ ' + localUsage.lastDate
+          : t('summary.allTime')
+        const hint = t('local.hint') + (typeof localUsage.sessions === 'number' && localUsage.sessions > 0
+          ? ' · ' + t('local.sessions', { count: formatInteger(localUsage.sessions) })
+          : '')
+        const sorted = days.sort((left, right) => left.date < right.date ? -1 : left.date > right.date ? 1 : 0)
+        const max = sorted.reduce((peak, day) => Math.max(peak, Number(day.tokens) || 0), 0)
+        return h(Section, { title: t('provider.uncensored'), hint, accent: 'ulm' },
+          h('div', { style: S.summary, 'data-testid': 'usage-local-summary' },
+            summaryStat(t('summary.tokens'), formatInteger(usageTotals.tokens), 'tokens', TOKENS.ulmAccent),
+            summaryStat(t('column.input'), formatInteger(usageTotals.input), 'input'),
+            summaryStat(t('column.output'), formatInteger(usageTotals.output), 'output'),
+            summaryStat(t('column.cache'), formatInteger(usageTotals.cache), 'cache'),
+            summaryStat(t('summary.requests'), t('unit.times', { value: formatInteger(usageTotals.requests) }), 'requests'),
+            summaryStat(t('summary.period'), period, 'period')),
+          sorted.length === 0 ? null : h('div', { style: { marginTop: 16 } },
+            h('div', { style: Object.assign({}, S.chart, { gap: 4, justifyContent: 'flex-start' }), role: 'img', 'aria-label': t('local.title') },
+              sorted.map((day) => {
+                const tokens = Number(day.tokens) || 0
+                const ratio = max > 0 ? tokens / max : 0
+                return h('div', {
+                  key: day.date,
+                  title: t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
+                  style: Object.assign({}, S.chartBar, {
+                    height: (ratio * 100) + '%', maxWidth: 36, flex: '1 1 0',
+                    background: 'linear-gradient(180deg, #F3BF63, #E39A2D)',
+                  }),
+                })
+              })),
+            h('div', { style: S.chartAxis },
+              h('span', null, sorted[0].date),
+              h('span', null, sorted[sorted.length - 1].date))),
+          h('div', { style: Object.assign({}, S.tableWrap, { marginTop: 16 }) },
+            h('table', { style: S.table, 'data-testid': 'usage-local-model-table' },
+              h('thead', null, h('tr', null,
+                h('th', { style: S.th }, t('column.model')),
+                h('th', { style: S.thNum }, t('column.tokens')),
+                h('th', { style: S.thNum }, t('column.input')),
+                h('th', { style: S.thNum }, t('column.output')),
+                h('th', { style: S.thNum }, t('column.cache')),
+                h('th', { style: S.thNum }, t('column.requests')))),
+              h('tbody', null,
+                models.length === 0
+                  ? h('tr', null, h('td', { colSpan: 6, style: S.tdEmpty }, t('table.empty')))
+                  : models.map((row) => h('tr', { key: row.model },
+                    h('td', { style: S.td }, h('div', { style: S.cellMain }, row.model)),
+                    h('td', { style: S.tdNum }, formatInteger(row.tokens)),
+                    h('td', { style: S.tdNum }, formatInteger(row.input)),
+                    h('td', { style: S.tdNum }, formatInteger(row.output)),
+                    h('td', { style: S.tdNum }, formatInteger(row.cache)),
+                    h('td', { style: S.tdNum }, formatInteger(row.requests))))))))
+      }
       function renderCards() {
-        const wallet = allTime !== null && allTime.wallet !== null && typeof allTime.wallet === 'object' ? allTime.wallet : null
-        const walletSub = wallet === null
-          ? undefined
-          : t('wallet.paid', { amount: formatMoney(wallet.paid, wallet.currency || currency) })
-            + ' · '
-            + t('wallet.granted', { amount: formatMoney(wallet.granted, wallet.currency || currency) })
         return h('div', { style: S.cards },
           h(StatCard, {
             label: t('card.balance'),
-            value: balance === null ? '—' : formatBalance(balance.total, balance.currency || currency),
-            sub: balance === null ? t('card.balanceUnavailable') : t('card.bonus', { amount: formatBalance(balance.bonus, balance.currency || currency) }),
+            value: dsBalance === null ? '—' : formatBalance(dsBalance.total, dsBalance.currency || currency),
+            sub: dsBalance === null ? t('card.balanceUnavailable') : t('card.bonus', { amount: formatBalance(dsBalance.bonus, dsBalance.currency || currency) }),
+            accent: 'ds',
           }),
-          h(StatCard, { label: t('card.totalCost'), value: totals === null ? '—' : formatMoney(totals.cost, currency), sub: walletSub }),
-          h(StatCard, { label: t('card.totalTokens'), value: totals === null ? '—' : formatInteger(totals.tokens) }),
-          h(StatCard, { label: t('card.totalRequests'), value: totals === null ? '—' : formatInteger(totals.requests) }))
+          h(StatCard, {
+            label: t('card.ulmBalance'),
+            value: ulm === null || ulm.available === null ? '—' : formatUsd(ulm.available),
+            sub: ulmSub,
+            danger: ulm !== null && ulm.low === true,
+            accent: 'ulm',
+          }))
       }
       function renderFilterBar() {
         const hint = allTime !== null && typeof allTime.firstDate === 'string' && allTime.firstDate !== ''
@@ -1297,7 +1692,10 @@ window.__ModuleLoader__.load({
         body = h('div', null,
           staleError === null ? null : renderBanner(t('status.stalePrefix', { message: describeError(staleError) }), false),
           refreshError === null ? null : renderBanner(describeError(refreshError), true),
+          // Merged DeepSeek + UncensoredLLM totals occupy the very top of the page.
+          renderCombinedOverview(),
           renderCards(),
+          h('div', { style: Object.assign({}, S.sectionHint, { marginTop: 8 }) }, t('balance.providersNote')),
           renderFilterBar(),
           view.error !== null && viewData === null
             ? h(StatusPanel, {
@@ -1307,11 +1705,13 @@ window.__ModuleLoader__.load({
               hint: describeError(view.error),
             }, h(UiButton, { variant: 'outline', onClick: () => reloadView() }, t('error.retry')))
             : h('div', null,
-              renderSummary(),
-              h(Section, { title: t('chart.title'), hint: t('filter.utcHint') }, renderChart()),
-              renderKeyTable(),
-              renderModelTable(),
-              renderDailyTable()))
+              h(Section, { title: t('provider.deepseek'), hint: t('provider.deepseekHint'), accent: 'ds' },
+                renderSummary(),
+                h(Section, { title: t('chart.title'), hint: t('filter.utcHint') }, renderChart()),
+                renderKeyTable(),
+                renderModelTable(),
+                renderDailyTable()),
+              renderLocalUsage()))
       }
 
       return h('section', { style: S.page, 'data-testid': TID.root, 'aria-busy': phase === 'loading' || phase === 'syncing' || view.loading },
