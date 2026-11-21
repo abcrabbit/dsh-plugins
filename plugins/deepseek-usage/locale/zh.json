@@ -49,6 +49,8 @@
   "local.title": "UncensoredLLM Token 用量（本机记录）",
   "local.hint": "来自 DSH 本机会话日志，按 UTC 日统计；与中转账单可能有差异",
   "local.sessions": "{count} 个会话",
+  "chart.dsCost": "DeepSeek 消费",
+  "chart.costUnavailable": "本地记录无金额",
   "combined.title": "Token 用量总览（DeepSeek + UncensoredLLM）",
   "combined.hint": "两家合计，随下方时间范围联动",
   "combined.totalTokens": "合计 Token",

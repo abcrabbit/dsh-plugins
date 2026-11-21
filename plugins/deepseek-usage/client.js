@@ -109,6 +109,8 @@ window.__ModuleLoader__.load({
       "local.title": "UncensoredLLM Token 用量（本机记录）",
       "local.hint": "来自 DSH 本机会话日志，按 UTC 日统计；与中转账单可能有差异",
       "local.sessions": "{count} 个会话",
+      "chart.dsCost": "DeepSeek 消费",
+      "chart.costUnavailable": "本地记录无金额",
       "combined.title": "Token 用量总览（DeepSeek + UncensoredLLM）",
       "combined.hint": "两家合计，随下方时间范围联动",
       "combined.totalTokens": "合计 Token",
@@ -211,6 +213,8 @@ window.__ModuleLoader__.load({
       "local.title": "UncensoredLLM token usage (local records)",
       "local.hint": "Folded from DSH local Session logs and counted by UTC day; may differ from the relay bill",
       "local.sessions": "{count} sessions",
+      "chart.dsCost": "DeepSeek spend",
+      "chart.costUnavailable": "No amount in local records",
       "combined.title": "Token usage overview (DeepSeek + UncensoredLLM)",
       "combined.hint": "Both providers combined; follows the date range below",
       "combined.totalTokens": "Total tokens",
@@ -578,6 +582,18 @@ window.__ModuleLoader__.load({
       chart: { display: 'flex', alignItems: 'flex-end', gap: 2, height: 140, padding: '0 2px', borderBottom: '1px solid ' + TOKENS.stroke },
       chartBar: { flex: '1 1 0', minWidth: 2, minHeight: 1, background: TOKENS.brand, borderRadius: '2px 2px 0 0' },
       chartAxis: { display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 6, fontSize: 12, lineHeight: '18px', color: TOKENS.label3 },
+      chartTip: {
+        position: 'fixed', zIndex: 9999, pointerEvents: 'none', boxSizing: 'border-box',
+        minWidth: 178, maxWidth: 280, padding: '9px 11px', borderRadius: 'var(--dsw-radius-md)',
+        border: '0.5px solid ' + TOKENS.stroke, background: TOKENS.surface,
+        boxShadow: '0 8px 24px rgba(15, 23, 42, 0.16)',
+        fontSize: 12, lineHeight: '19px', color: TOKENS.label,
+      },
+      chartTipTitle: { marginBottom: 4, fontWeight: 600, color: TOKENS.label },
+      chartTipRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+      chartTipLabel: { display: 'inline-flex', alignItems: 'center', gap: 6, color: TOKENS.label2 },
+      chartTipValue: { fontVariantNumeric: 'tabular-nums', color: TOKENS.label, fontWeight: 500 },
+      chartTipDot: { width: 8, height: 8, borderRadius: '50%', flex: 'none' },
       chartEmpty: {
         boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', height: 140,
         border: '0.5px dashed ' + TOKENS.stroke, borderRadius: 'var(--dsw-radius-md)', fontSize: 13, lineHeight: '20px', color: TOKENS.label3,
@@ -1006,6 +1022,7 @@ window.__ModuleLoader__.load({
       const [allTime, setAllTime] = useState(null)
       const [localUsage, setLocalUsage] = useState(null)
       const [view, setView] = useState({ data: null, loading: false, error: null })
+      const [chartTip, setChartTip] = useState(null)
       const [preset, setPreset] = useState('all')
       const [keyFilter, setKeyFilter] = useState('')
       const [modelFilter, setModelFilter] = useState('')
@@ -1104,6 +1121,7 @@ window.__ModuleLoader__.load({
         const range = rangeForPreset(filters.preset, filters.customFrom, filters.customTo)
         const isAllTime = !range.from && !filters.keyFilter && !filters.modelFilter
         const sequence = ++viewSeqRef.current
+        setChartTip(null)
         setView((previous) => ({ data: previous.data, loading: true, error: null }))
         // The local relay-usage fold is independent of the DeepSeek overview.
         void loadLocalUsage(filters)
@@ -1290,6 +1308,36 @@ window.__ModuleLoader__.load({
       }
 
       const describeError = (error) => t(errorKey(error))
+      // Instant chart tooltip (native `title` waits about a second, and the
+      // user wants the day's tokens and spend without that delay).
+      const hideChartTip = () => setChartTip(null)
+      function showChartTip(event, title, rows) {
+        if (typeof window === 'undefined') return
+        const width = 260
+        const height = 30 + rows.length * 19
+        const left = Math.max(8, Math.min(event.clientX + 14, window.innerWidth - width - 8))
+        const top = Math.max(8, Math.min(event.clientY + 14, window.innerHeight - height - 8))
+        setChartTip({ left, top, title, rows })
+      }
+      function renderChartTip() {
+        if (chartTip === null) return null
+        return h('div', { style: Object.assign({}, S.chartTip, { left: chartTip.left, top: chartTip.top }), role: 'tooltip' },
+          h('div', { style: S.chartTipTitle }, chartTip.title),
+          chartTip.rows.map((row, index) => h('div', { key: index, style: S.chartTipRow },
+            h('span', { style: S.chartTipLabel },
+              row.color === undefined ? null : h('span', { style: Object.assign({}, S.chartTipDot, { background: row.color }) }),
+              row.label),
+            h('span', { style: S.chartTipValue }, row.value))))
+      }
+      /** Rows for one DS day: tokens, spend and requests. */
+      function dsDayTipRows(day) {
+        const cost = Number(day.cost)
+        return [
+          { label: t('summary.tokens'), value: formatInteger(day.tokens), color: TOKENS.dsAccent },
+          { label: t('summary.cost'), value: Number.isFinite(cost) ? formatMoney(cost, viewCurrency) : '—' },
+          { label: t('summary.requests'), value: t('unit.times', { value: formatInteger(day.requests) }) },
+        ]
+      }
       const balance = status !== null && status.balance !== null && typeof status.balance === 'object' ? status.balance : null
       const balances = status !== null && status.balances !== null && typeof status.balances === 'object' ? status.balances : null
       const dsBalance = balances !== null && balances.deepseek !== null && typeof balances.deepseek === 'object' ? balances.deepseek : balance
@@ -1394,13 +1442,17 @@ window.__ModuleLoader__.load({
             sorted.map((day) => {
               const tokens = Number(day.tokens) || 0
               const ratio = max > 0 ? tokens / max : 0
+              const tip = dsDayTipRows(day)
               return h('div', {
                 key: day.date,
                 style: Object.assign({}, S.chartBar, {
                   height: (ratio * 100) + '%',
                   background: 'linear-gradient(180deg, #6B85FF, #4D6BFE)',
                 }),
-                title: t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
+                'aria-label': t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
+                onMouseEnter: (event) => showChartTip(event, day.date, tip),
+                onMouseMove: (event) => showChartTip(event, day.date, tip),
+                onMouseLeave: hideChartTip,
               })
             })),
           h('div', { style: S.chartAxis },
@@ -1483,13 +1535,20 @@ window.__ModuleLoader__.load({
         // Merge both daily series so one bar shows how each day splits.
         const days = new Map()
         if (viewData !== null && Array.isArray(viewData.byDay)) {
-          for (const day of viewData.byDay) days.set(day.date, { ds: Number(day.tokens) || 0, ulm: 0 })
+          for (const day of viewData.byDay) {
+            const cost = Number(day.cost)
+            days.set(day.date, {
+              ds: Number(day.tokens) || 0,
+              ulm: 0,
+              dsCost: Number.isFinite(cost) ? cost : null,
+            })
+          }
         }
         if (localUsage !== null && Array.isArray(localUsage.byDay)) {
           for (const day of localUsage.byDay) {
             const ulm = Number(day.tokens) || 0
             const existing = days.get(day.date)
-            if (existing === undefined) days.set(day.date, { ds: 0, ulm })
+            if (existing === undefined) days.set(day.date, { ds: 0, ulm, dsCost: null })
             else existing.ulm = ulm
           }
         }
@@ -1514,9 +1573,21 @@ window.__ModuleLoader__.load({
                 const total = ds + ulm
                 const ratio = max > 0 ? total / max : 0
                 const ulmShare = total > 0 ? (ulm / total) * 100 : 0
+                const tip = [
+                  { label: t('combined.totalTokens'), value: formatInteger(total) },
+                  { label: t('combined.deepseek'), value: formatInteger(ds), color: TOKENS.dsAccent },
+                  {
+                    label: t('chart.dsCost'),
+                    value: entry[1].dsCost === null ? '—' : formatMoney(entry[1].dsCost, viewCurrency),
+                  },
+                  { label: t('combined.uncensored'), value: formatInteger(ulm), color: TOKENS.ulmAccent },
+                ]
                 return h('div', {
                   key: date,
-                  title: t('chart.dayHint', { date, tokens: formatInteger(total) }),
+                  'aria-label': t('chart.dayHint', { date, tokens: formatInteger(total) }),
+                  onMouseEnter: (event) => showChartTip(event, date, tip),
+                  onMouseMove: (event) => showChartTip(event, date, tip),
+                  onMouseLeave: hideChartTip,
                   style: Object.assign({}, S.chartBar, {
                     height: (ratio * 100) + '%', maxWidth: 36, flex: '1 1 0',
                     display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
@@ -1563,9 +1634,17 @@ window.__ModuleLoader__.load({
               sorted.map((day) => {
                 const tokens = Number(day.tokens) || 0
                 const ratio = max > 0 ? tokens / max : 0
+                const tip = [
+                  { label: t('summary.tokens'), value: formatInteger(tokens), color: TOKENS.ulmAccent },
+                  { label: t('summary.cost'), value: t('chart.costUnavailable') },
+                  { label: t('summary.requests'), value: t('unit.times', { value: formatInteger(day.requests) }) },
+                ]
                 return h('div', {
                   key: day.date,
-                  title: t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
+                  'aria-label': t('chart.dayHint', { date: day.date, tokens: formatInteger(tokens) }),
+                  onMouseEnter: (event) => showChartTip(event, day.date, tip),
+                  onMouseMove: (event) => showChartTip(event, day.date, tip),
+                  onMouseLeave: hideChartTip,
                   style: Object.assign({}, S.chartBar, {
                     height: (ratio * 100) + '%', maxWidth: 36, flex: '1 1 0',
                     background: 'linear-gradient(180deg, #F3BF63, #E39A2D)',
@@ -1717,7 +1796,8 @@ window.__ModuleLoader__.load({
       return h('section', { style: S.page, 'data-testid': TID.root, 'aria-busy': phase === 'loading' || phase === 'syncing' || view.loading },
         h('div', { style: S.pageInner },
           renderHeader(),
-          body))
+          body,
+          renderChartTip()))
     }
 
     /** Registers the sidebar-foot entry and the global usage panel. */

@@ -2,21 +2,23 @@
  * Browser half of the screenshot-insert bundle.
  *
  * Registers one light-green camera button in the composer's trailing control
- * list, immediately beside the profile's prompt-enhance action. A click asks
- * the Host half for a PNG of the screen:
+ * list, immediately beside the profile's prompt-enhance action.
  *
- * - Windows: the whole monitor is returned and a full-page overlay frames the
- *   region.
- * - macOS: the system selection already returned one region, so the annotation
- *   editor opens on it directly.
+ * - Windows: a click opens a small capture menu with three choices: a
+ *   cross-screen region capture that temporarily hides the DSH window (so other
+ *   windows and every monitor are visible), a cross-screen region capture that
+ *   includes DSH, and a window picker that captures one chosen window even when
+ *   it is behind other windows or minimized.
+ * - macOS: the system interactive selection (all displays, window selection
+ *   with Space) already returns one region, so the annotation editor opens on
+ *   it directly.
  *
- * Both paths then show the annotation editor where the operator marks the
- * capture with rectangles and arrows and confirms. Only the confirmed
- * annotated PNG is inserted into the composer as a runtime image draft
- * attachment; the draft's text and caret are never touched.
+ * Region captures then show a full-page framing overlay before the annotation
+ * editor. Only the confirmed annotated PNG is inserted into the composer as a
+ * runtime image draft attachment; the draft's text and caret are never touched.
  */
 window.__ModuleLoader__.load({
-  id: '@local/dsh-plugin-screenshot-insert',
+  id: 'dsh-plugin-screenshot-insert',
   factory(require) {
     const React = require('react')
     const ReactDOM = require('react-dom')
@@ -25,10 +27,10 @@ window.__ModuleLoader__.load({
     /** Locale namespace owned by this plugin's visible copy. */
     const NS = 'screenshotInsert'
     /** This module's identity; also the style tag owner and the route client. */
-    const PACKAGE_ID = '@local/dsh-plugin-screenshot-insert'
-    /** Host route answering the raw PNG of the cursor's monitor. */
-    const CAPTURE_PATH = 'dsh-screenshot/capture'
-    /** Host response header marking a PNG that is already one selected region. */
+    const PACKAGE_ID = 'dsh-plugin-screenshot-insert'
+    /** Host route answering capture info, window lists, and PNG captures. */
+    const CAPTURE_PATH = 'dsh-screenshot/request'
+    /** Host response header marking a PNG that already holds one region/window. */
     const REGION_HEADER = 'x-dsh-capture-region'
     /** Style tag identity so repeated activation never stacks duplicates. */
     const STYLE_TAG_ID = PACKAGE_ID + '/screenshot-insert.css'
@@ -38,21 +40,37 @@ window.__ModuleLoader__.load({
      * route owns the authoritative timeout.
      */
     const CLIENT_CAPTURE_TIMEOUT_MS = 300000
+    /** Ceiling for the window-list read. */
+    const CLIENT_LIST_TIMEOUT_MS = 30000
     /** How long one success or failure notice stays on screen. */
     const NOTICE_MS = 3200
     /** Smallest selection worth cropping, in displayed pixels. */
     const MIN_CROP_PX = 6
     /** Annotation ink; red reads on both light and dark captures. */
     const INK = '#ef4444'
+    /** macOS keeps its native interactive selection instead of the capture menu. */
+    const PLATFORM_IS_MACOS = typeof navigator !== 'undefined' && /Macintosh|Mac OS X/i.test(navigator.userAgent)
 
     /** Visible copy owned by this plugin, simplified Chinese first. */
     const zh = {
       'action.capture': '截屏插入',
       'action.capturing': '正在截取屏幕',
-      'hint': '框选屏幕区域，标注后插入输入框',
+      'hint': '截屏：跨屏区域或指定窗口，标注后插入输入框',
+      'menu.title': '选择截图方式',
+      'menu.areaClean': '区域截图 · 跨屏幕',
+      'menu.areaCleanHint': '截图时临时隐藏 DSH 窗口，可截其他窗口和所有屏幕',
+      'menu.area': '区域截图 · 包含 DSH 窗口',
+      'menu.areaHint': '截取当前画面（包含 DSH 窗口）',
+      'menu.window': '选择窗口截图…',
+      'menu.windowHint': '从打开的窗口列表里选一个窗口，被遮挡或最小化也可以',
+      'picker.title': '选择要截图的窗口',
+      'picker.loading': '正在读取窗口列表…',
+      'picker.empty': '没有找到可截图的窗口',
+      'picker.minimized': '已最小化',
+      'picker.cancel': '取消',
       'overlay.label': '截取屏幕区域',
       'overlay.annotateLabel': '截图标注',
-      'overlay.hint': '拖动鼠标框选截图区域，Esc 取消',
+      'overlay.hint': '拖动鼠标框选截图区域（可跨屏幕），Esc 取消',
       'overlay.processing': '正在插入截图…',
       'overlay.cancel': '取消',
       'tool.rect': '矩形',
@@ -68,6 +86,8 @@ window.__ModuleLoader__.load({
       'error.busy': '输入框暂时无法插入图片，请稍后重试',
       'error.unavailable': '截屏功能暂不可用',
       'error.captureFailed': '截屏失败，请重试',
+      'error.windowList': '读取窗口列表失败，请重试',
+      'error.windowCapture': '窗口截图失败，该窗口可能已关闭',
       'error.insertFailed': '无法把截图插入输入框，请重试',
       'error.timeout': '截屏超时，请重试',
       'error.unauthorized': '当前页面无权使用截屏',
@@ -79,10 +99,22 @@ window.__ModuleLoader__.load({
     const en = {
       'action.capture': 'Capture screen',
       'action.capturing': 'Capturing screen',
-      'hint': 'Select a screen region, annotate it, then insert it into the composer',
+      'hint': 'Capture a cross-screen region or a window, annotate it, then insert it',
+      'menu.title': 'Choose how to capture',
+      'menu.areaClean': 'Region capture · cross-screen',
+      'menu.areaCleanHint': 'Hides the DSH window for the shot so other windows and every monitor are visible',
+      'menu.area': 'Region capture · include DSH',
+      'menu.areaHint': 'Capture the current screen as-is, including the DSH window',
+      'menu.window': 'Capture a window…',
+      'menu.windowHint': 'Pick one open window, even when covered or minimized',
+      'picker.title': 'Choose a window to capture',
+      'picker.loading': 'Reading the window list…',
+      'picker.empty': 'No capturable windows found',
+      'picker.minimized': 'minimized',
+      'picker.cancel': 'Cancel',
       'overlay.label': 'Capture a screen region',
       'overlay.annotateLabel': 'Screenshot annotation',
-      'overlay.hint': 'Drag to select a screen region; Escape cancels',
+      'overlay.hint': 'Drag to select a screen region (any display); Escape cancels',
       'overlay.processing': 'Inserting screenshot…',
       'overlay.cancel': 'Cancel',
       'tool.rect': 'Rectangle',
@@ -98,6 +130,8 @@ window.__ModuleLoader__.load({
       'error.busy': 'The composer cannot accept an image right now. Try again.',
       'error.unavailable': 'Screenshot capture is unavailable',
       'error.captureFailed': 'Screen capture failed. Try again.',
+      'error.windowList': 'Could not read the window list. Try again.',
+      'error.windowCapture': 'The window could not be captured; it may have closed',
       'error.insertFailed': 'The screenshot could not be inserted into the composer',
       'error.timeout': 'Screen capture timed out. Try again.',
       'error.unauthorized': 'This page is not allowed to capture the screen',
@@ -188,6 +222,40 @@ window.__ModuleLoader__.load({
       'font:13px/18px var(--dsw-font-family,system-ui);box-shadow:0 8px 24px rgba(0,0,0,.35)}',
       '.dshScreenshot_toastError{border-color:rgba(248,113,113,.6);color:#fee2e2}',
       '.dshScreenshot_toastIcon{flex:none;font-weight:600}',
+      '.dshScreenshot_menu{position:fixed;z-index:1400;box-sizing:border-box;min-width:286px;max-width:380px;',
+      'padding:5px;display:flex;flex-direction:column;gap:2px;border:1px solid rgba(148,163,184,.35);',
+      'border-radius:12px;background:rgba(2,6,23,.96);box-shadow:0 16px 48px rgba(0,0,0,.5)}',
+      '.dshScreenshot_menuItem{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;',
+      'padding:8px 10px;border:none;border-radius:8px;background:transparent;color:#e2e8f0;cursor:pointer;',
+      'text-align:left;font:13px/18px var(--dsw-font-family,system-ui)}',
+      '@media (hover:hover){.dshScreenshot_menuItem:hover:not(:disabled){background:rgba(148,163,184,.18)}}',
+      '.dshScreenshot_menuItem:disabled{opacity:.5;cursor:default}',
+      '.dshScreenshot_menuTitle{pointer-events:none;font-weight:600;color:#f8fafc}',
+      '.dshScreenshot_menuHint{pointer-events:none;font-size:12px;line-height:16px;color:#94a3b8;white-space:normal}',
+      '.dshScreenshot_pickerOverlay{position:fixed;inset:0;z-index:1400;box-sizing:border-box;display:flex;',
+      'align-items:center;justify-content:center;padding:24px;background:rgba(2,6,23,.58);outline:none}',
+      '.dshScreenshot_picker{box-sizing:border-box;display:flex;flex-direction:column;width:min(560px,calc(100vw - 48px));',
+      'max-height:min(70vh,640px);border:1px solid rgba(148,163,184,.35);border-radius:14px;',
+      'background:rgba(15,23,42,.98);color:#f8fafc;box-shadow:0 24px 80px rgba(0,0,0,.55);overflow:hidden;',
+      'font:13px/18px var(--dsw-font-family,system-ui)}',
+      '.dshScreenshot_pickerHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;',
+      'padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.25);font-weight:600}',
+      '.dshScreenshot_pickerBody{flex:1;min-height:0;overflow:auto;padding:6px}',
+      '.dshScreenshot_pickerRow{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;',
+      'padding:8px 10px;border:none;border-radius:8px;background:transparent;color:inherit;cursor:pointer;',
+      'text-align:left;font:inherit}',
+      '@media (hover:hover){.dshScreenshot_pickerRow:hover{background:rgba(148,163,184,.18)}}',
+      '.dshScreenshot_pickerRow:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
+      '.dshScreenshot_pickerRowTitle{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+      'pointer-events:none;font-weight:600}',
+      '.dshScreenshot_pickerRowMeta{pointer-events:none;font-size:12px;line-height:16px;color:#94a3b8}',
+      '.dshScreenshot_pickerHint{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px 14px;',
+      'color:#94a3b8;text-align:center}',
+      '.dshScreenshot_pickerFooter{display:flex;justify-content:flex-end;padding:10px 14px;',
+      'border-top:1px solid rgba(148,163,184,.25)}',
+      '.dshScreenshot_spinnerLight{width:18px;height:18px;border-radius:50%;box-sizing:border-box;',
+      'border:2px solid rgba(226,232,240,.3);border-top-color:#e2e8f0;',
+      'animation:dshScreenshot_spin 800ms linear infinite}',
     ].join('')
 
     /** Host/Client failure code to localized notice key. */
@@ -196,6 +264,8 @@ window.__ModuleLoader__.load({
       'capture-failed': 'error.captureFailed',
       'capture-timeout': 'error.timeout',
       'capture-unavailable': 'error.unavailable',
+      'window-list-failed': 'error.windowList',
+      'window-capture-failed': 'error.windowCapture',
       'insert-failed': 'error.insertFailed',
       'unsupported': 'error.unsupported',
       'unauthorized': 'error.unauthorized',
@@ -270,24 +340,33 @@ window.__ModuleLoader__.load({
       return NOTICE_BY_CODE[code] || 'error.captureFailed'
     }
 
-    /** Ask the Host half for a PNG of the monitor under the cursor. */
-    async function requestCapture() {
-      if (typeof window === 'undefined' || typeof window.fetch !== 'function') {
-        throw new ScreenshotError('unavailable')
-      }
+    /** Resolve the plugin's Host route URL for the current page. */
+    function hostUrl() {
       const base = typeof document !== 'undefined' && typeof document.baseURI === 'string'
         ? document.baseURI
         : window.location.href
-      const url = new URL(CAPTURE_PATH, base)
+      return new URL(CAPTURE_PATH, base)
+    }
+
+    /**
+     * POST one JSON action to the Host half.
+     * @param payload - action name and its parameters.
+     * @param timeoutMs - client-side ceiling for this action.
+     * @returns the successful Response.
+     */
+    async function postHost(payload, timeoutMs) {
+      if (typeof window === 'undefined' || typeof window.fetch !== 'function') {
+        throw new ScreenshotError('unavailable')
+      }
       const controller = new AbortController()
-      const timer = window.setTimeout(() => { controller.abort() }, CLIENT_CAPTURE_TIMEOUT_MS)
+      const timer = window.setTimeout(() => { controller.abort() }, timeoutMs)
       let response
       try {
-        response = await window.fetch(url, {
+        response = await window.fetch(hostUrl(), {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'content-type': 'application/json' },
-          body: '{}',
+          body: JSON.stringify(payload),
           signal: controller.signal,
         })
       } catch (error) {
@@ -299,13 +378,55 @@ window.__ModuleLoader__.load({
       if (!response.ok) {
         let code = ''
         try {
-          const payload = await response.json()
-          if (payload !== null && typeof payload === 'object' && typeof payload.code === 'string') code = payload.code
+          const body = await response.json()
+          if (body !== null && typeof body === 'object' && typeof body.code === 'string') code = body.code
         } catch (error) {
           code = ''
         }
         throw new ScreenshotError(code === '' ? 'capture-failed' : code)
       }
+      return response
+    }
+
+    /** Read the capturable window list from the Host. */
+    async function requestWindowList() {
+      const response = await postHost({ action: 'windows' }, CLIENT_LIST_TIMEOUT_MS)
+      let payload
+      try {
+        payload = await response.json()
+      } catch (error) {
+        throw new ScreenshotError('window-list-failed')
+      }
+      if (payload === null || typeof payload !== 'object' || !Array.isArray(payload.windows)) {
+        throw new ScreenshotError('window-list-failed')
+      }
+      const windows = []
+      for (const entry of payload.windows) {
+        if (entry === null || typeof entry !== 'object') continue
+        if (typeof entry.id !== 'string' || entry.id === '') continue
+        if (typeof entry.title !== 'string' || entry.title === '') continue
+        windows.push({
+          id: entry.id,
+          title: entry.title,
+          process: typeof entry.process === 'string' ? entry.process : '',
+          iconic: entry.iconic === true,
+        })
+      }
+      return windows
+    }
+
+    /**
+     * Ask the Host for one capture.
+     * @param mode - `area-clean`, `area`, `window` (Windows) or `native` (macOS).
+     * @param windowId - decimal window handle for window mode.
+     * @returns the decoded capture described by `{ url, width, height, region, cropCanvas? }`.
+     */
+    async function requestCapture(mode, windowId) {
+      const response = await postHost({
+        action: 'capture',
+        mode,
+        ...windowId === undefined ? {} : { window: windowId },
+      }, CLIENT_CAPTURE_TIMEOUT_MS)
       let blob
       try {
         blob = await response.blob()
@@ -319,8 +440,8 @@ window.__ModuleLoader__.load({
         if (loaded.width < 1 || loaded.height < 1) throw new ScreenshotError('invalid')
         const region = response.headers.get(REGION_HEADER) === '1'
         if (!region) return { url: objectUrl, width: loaded.width, height: loaded.height, region: false }
-        // macOS returns the already-selected region, so the annotation editor
-        // opens on it directly and the frameless capture is not needed.
+        // macOS native selection and Windows window capture already return one
+        // region/window, so the annotation editor opens on it directly.
         return {
           url: objectUrl,
           width: loaded.width,
@@ -948,24 +1069,130 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Small capture-mode menu anchored above the camera button. One row per
+     * capture choice; the whole row (title and hint) is the click target.
+     * @param props - locale seat, menu element ref, position style, pick callback.
+     * @returns one portalled menu element.
+     */
+    function CaptureMenu(props) {
+      const { t, menuRef, style, onPick } = props
+      const items = [
+        { id: 'area-clean', title: t('menu.areaClean'), hint: t('menu.areaCleanHint') },
+        { id: 'area', title: t('menu.area'), hint: t('menu.areaHint') },
+        { id: 'window', title: t('menu.window'), hint: t('menu.windowHint') },
+      ]
+      const stop = (event) => { event.stopPropagation() }
+      return h('div', {
+        ref: menuRef,
+        className: 'dshScreenshot_menu',
+        role: 'menu',
+        'aria-label': t('menu.title'),
+        'data-dsh-capture-menu': '',
+        style,
+        onPointerDown: stop,
+        onMouseDown: stop,
+        onClick: stop,
+        onContextMenu: stop,
+      }, items.map((item) => h('button', {
+        key: item.id,
+        type: 'button',
+        role: 'menuitem',
+        className: 'dshScreenshot_menuItem',
+        'data-dsh-capture-option': item.id,
+        onClick: (event) => {
+          event.stopPropagation()
+          onPick(item.id)
+        },
+      },
+        h('span', { className: 'dshScreenshot_menuTitle' }, item.title),
+        h('span', { className: 'dshScreenshot_menuHint' }, item.hint),
+      )))
+    }
+
+    /**
+     * Modal list of capturable top-level windows, with a loading state and a
+     * cancel action. Rows report the owning process and minimized state.
+     * @param props - locale seat, picker state, window rows, pick and cancel callbacks.
+     * @returns one portalled modal element.
+     */
+    function WindowPicker(props) {
+      const { t, state, windows, onPick, onCancel } = props
+      const stop = (event) => { event.stopPropagation() }
+      return h('div', {
+        className: 'dshScreenshot_pickerOverlay',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-label': t('picker.title'),
+        'data-dsh-window-picker': '',
+        onPointerDown: stop,
+        onMouseDown: stop,
+        onClick: (event) => {
+          event.stopPropagation()
+          if (event.target === event.currentTarget) onCancel()
+        },
+      },
+        h('div', { className: 'dshScreenshot_picker', onPointerDown: stop, onMouseDown: stop },
+          h('div', { className: 'dshScreenshot_pickerHeader' }, h('span', null, t('picker.title'))),
+          h('div', { className: 'dshScreenshot_pickerBody' },
+            state === 'loading'
+              ? h('div', { className: 'dshScreenshot_pickerHint' },
+                  h('span', { className: 'dshScreenshot_spinnerLight', 'aria-hidden': true }),
+                  h('span', null, t('picker.loading')))
+              : windows.length === 0
+                ? h('div', { className: 'dshScreenshot_pickerHint' }, t('picker.empty'))
+                : windows.map((window) => h('button', {
+                    key: window.id,
+                    type: 'button',
+                    className: 'dshScreenshot_pickerRow',
+                    'data-dsh-window-id': window.id,
+                    onClick: (event) => {
+                      event.stopPropagation()
+                      onPick(window)
+                    },
+                  },
+                    h('span', { className: 'dshScreenshot_pickerRowTitle' }, window.title),
+                    h('span', { className: 'dshScreenshot_pickerRowMeta' },
+                      (window.process === '' ? '—' : window.process)
+                      + (window.iconic ? ' · ' + t('picker.minimized') : '')),
+                  )),
+          ),
+          h('div', { className: 'dshScreenshot_pickerFooter' },
+            h('button', {
+              type: 'button',
+              className: 'dshScreenshot_ghostTool',
+              onClick: (event) => {
+                event.stopPropagation()
+                onCancel()
+              },
+            }, t('picker.cancel')),
+          ),
+        ),
+      )
+    }
+
+    /**
      * The composer's light-green screenshot circle, rendered before the submit
      * action beside the prompt-enhance control.
      * @param props - the slot's input hooks plus this plugin's injected face.
-     * @returns the capture button, its overlay, and transient notices.
+     * @returns the capture button, its menu/picker/overlay, and transient notices.
      */
     function ScreenshotButton(props) {
-      const { useInput, inputActions, sessionId, t, captureScreen, insertImage } = props
+      const { useInput, inputActions, sessionId, t, captureScreen, listWindows, insertImage } = props
       const phase = useInput((state) => (
         state !== null && typeof state === 'object' && typeof state.phase === 'string' ? state.phase : 'plain'
       ))
       const [busy, setBusy] = React.useState(false)
       const [overlay, setOverlay] = React.useState(null)
       const [notice, setNotice] = React.useState(null)
+      const [menu, setMenu] = React.useState(null)
+      const [picker, setPicker] = React.useState(null)
       const alive = React.useRef(true)
       const busyRef = React.useRef(false)
       const overlayRef = React.useRef(null)
       const restoreFocusRef = React.useRef(null)
       const noticeSeq = React.useRef(0)
+      const buttonRef = React.useRef(null)
+      const menuRef = React.useRef(null)
       overlayRef.current = overlay
 
       React.useEffect(() => () => {
@@ -982,6 +1209,32 @@ window.__ModuleLoader__.load({
         }, NOTICE_MS)
         return () => { window.clearTimeout(timer) }
       }, [notice])
+
+      /** Escape and outside clicks dismiss the capture menu and window picker. */
+      React.useEffect(() => {
+        if (menu === null && picker === null) return undefined
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          if (picker !== null) setPicker(null)
+          else setMenu(null)
+        }
+        const onPointerDown = (event) => {
+          if (menu === null) return
+          const target = event.target
+          if (!(target instanceof Element)) return
+          if (menuRef.current !== null && menuRef.current.contains(target)) return
+          if (buttonRef.current !== null && buttonRef.current.contains(target)) return
+          setMenu(null)
+        }
+        window.addEventListener('keydown', onKeyDown, true)
+        document.addEventListener('pointerdown', onPointerDown, true)
+        return () => {
+          window.removeEventListener('keydown', onKeyDown, true)
+          document.removeEventListener('pointerdown', onPointerDown, true)
+        }
+      }, [menu, picker])
 
       /** Show one localized notice; failures tint it red. */
       const showNotice = (key, isError) => {
@@ -1036,13 +1289,16 @@ window.__ModuleLoader__.load({
         restoreFocus()
       }
 
-      const onClick = () => {
+      /** Start one capture in the requested mode and show its overlay. */
+      const beginCapture = (mode, windowId) => {
         if (busyRef.current || overlayRef.current !== null) return
+        setMenu(null)
+        setPicker(null)
+        setNotice(null)
         busyRef.current = true
         setBusy(true)
-        setNotice(null)
         restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        captureScreen().then((captured) => {
+        captureScreen(mode, windowId).then((captured) => {
           if (!alive.current) {
             URL.revokeObjectURL(captured.url)
             return
@@ -1063,21 +1319,89 @@ window.__ModuleLoader__.load({
         })
       }
 
+      /** Open the window picker and load the capturable window list. */
+      const openWindowPicker = () => {
+        setMenu(null)
+        setPicker({ state: 'loading', windows: [] })
+        listWindows().then((windows) => {
+          if (!alive.current) return
+          setPicker({ state: 'ready', windows })
+        }, (error) => {
+          if (!alive.current) return
+          setPicker(null)
+          showNotice(t(noticeKeyFor(error)), true)
+          console.warn('[screenshot-insert] window list failed:', error)
+        })
+      }
+
+      /** One capture-menu choice: the three area/window modes. */
+      const onMenuPick = (id) => {
+        if (id === 'window') {
+          openWindowPicker()
+          return
+        }
+        beginCapture(id)
+      }
+
+      /** One window picked from the modal list. */
+      const onWindowPick = (window) => {
+        beginCapture('window', window.id)
+      }
+
+      const onClick = () => {
+        if (busyRef.current || overlayRef.current !== null) return
+        setNotice(null)
+        if (PLATFORM_IS_MACOS) {
+          beginCapture('native')
+          return
+        }
+        if (menu !== null) {
+          setMenu(null)
+          return
+        }
+        const rect = buttonRef.current === null ? null : buttonRef.current.getBoundingClientRect()
+        if (rect === null) {
+          beginCapture('area-clean')
+          return
+        }
+        setPicker(null)
+        setMenu({
+          right: Math.max(8, window.innerWidth - rect.right),
+          bottom: Math.max(8, window.innerHeight - rect.top + 8),
+        })
+      }
+
       const machineBusy = phase === 'adjudicating' || phase === 'submitting'
       const label = busy ? t('action.capturing') : t('action.capture')
       const className = 'dshScreenshot_button' + (busy ? ' dshScreenshot_busy' : '')
 
       return h(React.Fragment, null,
         h('button', {
+          ref: buttonRef,
           type: 'button',
           className,
           'data-dsh-screenshot-button': '',
           'aria-label': label,
+          'aria-haspopup': PLATFORM_IS_MACOS ? undefined : 'menu',
+          'aria-expanded': menu === null ? undefined : 'true',
           'aria-busy': busy ? 'true' : undefined,
           disabled: busy || machineBusy,
           onMouseDown: (event) => { event.preventDefault() },
           onClick,
         }, busy ? h('span', { className: 'dshScreenshot_spinner', 'aria-hidden': true }) : h(CameraIcon)),
+        menu === null ? null : ReactDOM.createPortal(h(CaptureMenu, {
+          t,
+          menuRef,
+          style: { right: menu.right + 'px', bottom: menu.bottom + 'px' },
+          onPick: onMenuPick,
+        }), document.body),
+        picker === null ? null : ReactDOM.createPortal(h(WindowPicker, {
+          t,
+          state: picker.state,
+          windows: picker.windows,
+          onPick: onWindowPick,
+          onCancel: () => { setPicker(null) },
+        }), document.body),
         overlay === null ? null : ReactDOM.createPortal(h(CaptureOverlay, {
           image: overlay,
           t,
@@ -1168,7 +1492,7 @@ window.__ModuleLoader__.load({
           id: 'screenshot-insert',
           order: 101,
           locale: NS,
-          inject: () => ({ t, captureScreen: requestCapture, insertImage }),
+          inject: () => ({ t, captureScreen: requestCapture, listWindows: requestWindowList, insertImage }),
         }, ScreenshotButton))
       },
     }

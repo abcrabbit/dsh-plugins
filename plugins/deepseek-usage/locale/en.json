@@ -49,6 +49,8 @@
   "local.title": "UncensoredLLM token usage (local records)",
   "local.hint": "Folded from DSH local Session logs and counted by UTC day; may differ from the relay bill",
   "local.sessions": "{count} sessions",
+  "chart.dsCost": "DeepSeek spend",
+  "chart.costUnavailable": "No amount in local records",
   "combined.title": "Token usage overview (DeepSeek + UncensoredLLM)",
   "combined.hint": "Both providers combined; follows the date range below",
   "combined.totalTokens": "Total tokens",

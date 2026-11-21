@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Screenshot annotate & insert",
-    "description": "Adds a light-green screenshot button beside the composer's prompt Enhance button. Capture a region with the native macOS selection (in-app framing on Windows), mark it with rectangles and arrows, and confirm to insert the annotated image into the composer."
+    "description": "Adds a light-green screenshot button beside the composer's prompt Enhance button. Capture cross-screen regions (hiding DSH during the shot) or pick any open window, mark it with rectangles and arrows, and confirm to insert the annotated image into the composer."
   }
 }
